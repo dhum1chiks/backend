@@ -20,7 +20,8 @@
     "knex": "^2.5.1",
     "passport": "^0.7.0",
     "passport-local": "^1.0.0",
-    "pg": "^8.16.0"
+    "pg": "^8.16.0",
+    "serverless-http": "^3.2.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
