@@ -74,7 +74,15 @@ app.use('/auth', authLimiter);
 app.get('/hello', (req, res) => {
   res.send('Hello, World!');
 });
-
+app.get('/env-check', (req, res) => {
+  res.json({
+    DATABASE_URL: !!process.env.DATABASE_URL,
+    PG_SSL_CA: !!process.env.PG_SSL_CA,
+    JWT_SECRET: !!process.env.JWT_SECRET,
+    SESSION_SECRET: !!process.env.SESSION_SECRET,
+    NODE_ENV: process.env.NODE_ENV,
+  });
+});
 // Handle favicon to avoid 404s
 app.get('/favicon.ico', (req, res) => res.status(204).end());
 app.get('/favicon.png', (req, res) => res.status(204).end());
