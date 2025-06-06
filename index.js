@@ -25,7 +25,7 @@ app.use(express.json());
 
 app.use(
   cors({
-    origin: ['https://task-frontend-gf8v.vercel.app', 'http://localhost:3000'],
+    origin: ['https://frontend-alpha-seven-16.vercel.app', 'http://localhost:3000'],
     credentials: true,
   })
 );
