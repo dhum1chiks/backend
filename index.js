@@ -83,6 +83,14 @@ app.get('/env-check', (req, res) => {
     NODE_ENV: process.env.NODE_ENV,
   });
 });
+app.get('/db-test', async (req, res) => {
+  try {
+    await db.raw('SELECT 1');
+    res.json({ status: 'Database connection successful' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 // Handle favicon to avoid 404s
 app.get('/favicon.ico', (req, res) => res.status(204).end());
 app.get('/favicon.png', (req, res) => res.status(204).end());
