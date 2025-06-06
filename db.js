@@ -7,7 +7,8 @@ const db = knex({
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.PG_SSL_CA
       ? {
-          rejectUnauthorized: process.env.NODE_ENV === 'production',
+      
+          rejectUnauthorized: false
           ca: process.env.PG_SSL_CA,
         }
       : false, // Disable SSL if PG_SSL_CA is not set
