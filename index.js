@@ -10,7 +10,6 @@ const teamRoutes = require('./routes/teams');
 const taskRoutes = require('./routes/tasks');
 const usersRouter = require('./routes/users');
 const rateLimit = require('express-rate-limit');
-const serverless = require('serverless-http');
 
 if (result.error) {
   console.error('Error loading .env file:', result.error.message);
@@ -43,12 +42,12 @@ app.use(
         ca: process.env.PG_SSL_CA
       },
       tableName: 'session',
-      createTableIfMissing: false // Table is created via migration
+      createTableIfMissing: false
     }),
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
-    cookie: { secure: process.env.NODE_ENV === 'production', maxAge: 24 * 60 * 60 * 1000 } // 24 hours
+    cookie: { secure: process.env.NODE_ENV === 'production', maxAge: 24 * 60 * 60 * 1000 }
   })
 );
 
@@ -62,19 +61,23 @@ app.use(
   })
 );
 
-// Rate limiting for auth routes to prevent abuse
+// Rate limiting for auth routes
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // Limit each IP to 10 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 10,
   standardHeaders: true,
   legacyHeaders: false
 });
 app.use('/auth', authLimiter);
 
-// Basic health check route
+// Health check route
 app.get('/hello', (req, res) => {
   res.send('Hello, World!');
 });
+
+// Handle favicon to avoid 404s
+app.get('/favicon.ico', (req, res) => res.status(204).end());
+app.get('/favicon.png', (req, res) => res.status(204).end());
 
 app.use('/auth', authRoutes);
 app.use('/teams', teamRoutes);
@@ -87,12 +90,10 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-// Test database connection without exiting
+// Test database connection
 db.raw('SELECT 1')
   .then(() => console.log('Database connected successfully'))
-  .catch((err) => {
-    console.error('Database connection error:', err);
-  });
+  .catch((err) => console.error('Database connection error:', err));
 
-// Export for Vercel serverless
-module.exports.handler = serverless(app);
+// Export for Vercel
+module.exports = app;
