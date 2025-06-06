@@ -1,9 +1,22 @@
-require('dotenv').config();
+require('dotenv').config({ path: '.env', silent: true });
 const knex = require('knex');
-const config = require('./knexfile');
 
-console.log('Knex Config:', config.development); // Optional for debug
-const db = knex(config.development);
+const db = knex({
+  client: 'pg',
+  connection: {
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.PG_SSL_CA
+      ? {
+          rejectUnauthorized: process.env.NODE_ENV === 'production',
+          ca: process.env.PG_SSL_CA,
+        }
+      : false, // Disable SSL if PG_SSL_CA is not set
+  },
+  pool: { min: 0, max: 3 }, // Further reduce max connections
+  acquireConnectionTimeout: 10000,
+  migrations: { directory: './migrations' },
+  debug: process.env.NODE_ENV !== 'production',
+});
 
 db.raw('SELECT 1')
   .then(() => console.log('Database connected successfully'))
