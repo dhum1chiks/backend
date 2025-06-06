@@ -1,4 +1,3 @@
-// db.js
 require('dotenv').config();
 const knex = require('knex');
 const config = require('./knexfile');
@@ -11,4 +10,3 @@ db.raw('SELECT 1')
   .catch((err) => console.error('Database connection error:', err));
 
 module.exports = { db };
-

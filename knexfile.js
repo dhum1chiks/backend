@@ -1,11 +1,19 @@
-// knexfile.js
 module.exports = {
   development: {
     client: 'pg',
-    connection: process.env.DATABASE_URL || 'postgres://taskmanager_user:0318@localhost:5432/taskmanager',
+    connection: {
+      connectionString: process.env.DATABASE_URL,
+      ssl: {
+        rejectUnauthorized: true,
+        ca: process.env.PG_SSL_CA
+      }
+    },
     migrations: {
       directory: './migrations'
+    },
+    pool: {
+      min: 2,
+      max: 10
     }
   }
 };
-
