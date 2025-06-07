@@ -8,8 +8,6 @@ const authRoutes = require('./routes/auth');
 const { isAuthenticated } = require('./middleware/isAuthenticated');
 
 const app = express();
-
-app.use(express.json());
 app.use(cors({
   origin: [
     'http://localhost:3001',                            // your local frontend
@@ -19,6 +17,8 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
 }));
+app.use(express.json());
+
 
 
 // Health check route
