@@ -1,10 +1,8 @@
-// index.js
-
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
-const { createClient } = require('@supabase/supabase-js');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -15,32 +13,38 @@ const { isAuthenticated } = require('./middleware/isAuthenticated');
 
 const app = express();
 
-// Setup Supabase client
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+// Middleware
+app.use(express.json());
+app.use(
+  cors({
+    origin: [
+      'http://localhost:3000',
+      'http://localhost:3002',
+      'https://frontend-alpha-seven-16.vercel.app',
+    ],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  })
+);
+app.use(cookieParser());
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Missing Supabase environment variables!');
-  process.exit(1);
-}
-
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
-// Make Supabase available in request context (optional)
+// Log CORS requests for debugging
 app.use((req, res, next) => {
-  req.supabase = supabase;
+  console.debug(`CORS request: ${req.method} ${req.originalUrl} from ${req.get('Origin')}`);
   next();
 });
 
-// Middleware
-app.use(express.json());
-app.use(cors({
-  origin: ['https://frontend-alpha-seven-16.vercel.app', 'http://localhost:3001'],
-  credentials: true,
-}));
-
-// Rate-limited auth routes
-app.use('/auth', rateLimit({ windowMs: 15 * 60 * 1000, max: 10 }), authRoutes);
+// Rate-limited auth routes with logging
+const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  handler: (req, res) => {
+    console.warn(`Rate limit exceeded for ${req.method} ${req.originalUrl} from ${req.ip}`);
+    res.status(429).json({ error: 'Too many requests, please try again later' });
+  },
+});
+app.use('/auth', authRateLimiter, authRoutes);
 
 // Mount other routes
 app.use('/tasks', taskRoutes);
@@ -55,9 +59,12 @@ app.get('/protected', isAuthenticated, (req, res) => {
   res.json({ message: `Hello, user ${req.user.email}` });
 });
 
-// Error handling
+// Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Server error:', err);
+  console.error(`Server error on ${req.method} ${req.originalUrl}:`, err);
+  if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
   res.status(500).json({ error: 'Internal server error' });
 });
 
@@ -66,4 +73,3 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-

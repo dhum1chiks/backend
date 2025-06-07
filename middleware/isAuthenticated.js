@@ -3,26 +3,37 @@ const jwt = require('jsonwebtoken');
 
 function isAuthenticated(req, res, next) {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  let token;
+
+  // Safely extract token from Authorization header
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.replace(/^Bearer\s+/, '');
+  }
 
   if (!token) {
-    console.warn('Authentication failed: No token provided');
-    return res.status(401).json({ error: 'Unauthorized' });
+    console.warn(`Authentication failed: No token provided for ${req.method} ${req.originalUrl}`);
+    return res.status(401).json({ error: 'No token provided' });
   }
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Validate token payload
+    if (!decoded.id || !decoded.email) {
+      console.warn(`Authentication failed: Invalid token payload for ${req.method} ${req.originalUrl}`);
+      return res.status(401).json({ error: 'Invalid token payload' });
+    }
 
     req.user = {
       id: decoded.id,
       email: decoded.email,
     };
 
-    console.log('Authenticated user:', req.user);
+    console.debug(`Authenticated user: ${req.user.id} (${req.user.email}) for ${req.method} ${req.originalUrl}`);
     next();
   } catch (error) {
-    console.error('JWT verification failed:', error.message);
-    return res.status(403).json({ error: 'Invalid or expired token' });
+    console.error(`JWT verification failed for ${req.method} ${req.originalUrl}: ${error.name} - ${error.message}`);
+    return res.status(401).json({ error: 'Invalid or expired token' });
   }
 }
 
