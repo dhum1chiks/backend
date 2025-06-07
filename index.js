@@ -1,10 +1,10 @@
-const result = require('dotenv').config();
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
 const passport = require('passport');
 const PGSession = require('connect-pg-simple')(session);
-const { Pool } = require('pg'); // ✅ Import pg.Pool
+const { Pool } = require('pg');
 const { db } = require('./db');
 const authRoutes = require('./routes/auth');
 const teamRoutes = require('./routes/teams');
@@ -12,74 +12,55 @@ const taskRoutes = require('./routes/tasks');
 const usersRouter = require('./routes/users');
 const rateLimit = require('express-rate-limit');
 
-// Check for environment variables
-if (result.error) {
-  console.error('Error loading .env file:', result.error.message);
-}
-if (!process.env.DATABASE_URL) {
-  console.error('Error: DATABASE_URL is not set');
-}
-if (!process.env.JWT_SECRET) {
-  console.error('Error: JWT_SECRET is not set');
-}
-if (!process.env.SESSION_SECRET) {
-  console.error('Error: SESSION_SECRET is not set');
-}
+// ✅ Validate required env variables
+['DATABASE_URL', 'JWT_SECRET', 'SESSION_SECRET'].forEach((key) => {
+  if (!process.env[key]) {
+    console.error(`❌ Missing env variable: ${key}`);
+    process.exit(1);
+  }
+});
 
-// ✅ Create a pg.Pool instance for the session store
+// ✅ PostgreSQL session pool
 const pgPool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
     rejectUnauthorized: true,
-    ca: process.env.PG_SSL_CA
-  }
+    ca: process.env.PG_SSL_CA,
+  },
 });
 
 const app = express();
-app.set('trust proxy', 1); // Enable trust proxy for rate limiting behind Vercel/Proxies
+app.set('trust proxy', 1); // Trust proxy for secure cookies in production
+
+// ✅ Middlewares
 app.use(express.json());
-
-// ✅ Session configuration using connect-pg-simple with pg.Pool
-app.use(
-  session({
-    store: new PGSession({
-      pool: pgPool,
-      tableName: 'session',
-      createTableIfMissing: false
-    }),
-    secret: process.env.SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 24 * 60 * 60 * 1000 // 1 day
-    }
-  })
-);
-
-app.use(passport.initialize());
-app.use(passport.session());
-
 app.use(
   cors({
     origin: ['https://frontend-alpha-seven-16.vercel.app'],
     credentials: true,
   })
 );
+app.use(
+  session({
+    store: new PGSession({
+      pool: pgPool,
+      tableName: 'session',
+      createTableIfMissing: false, // Make sure session table exists
+    }),
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 24 * 60 * 60 * 1000, // 1 day
+    },
+  })
+);
+app.use(passport.initialize());
+app.use(passport.session());
 
-// Rate limiter for auth routes
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false
-});
-app.use('/auth', authLimiter);
-
-// Health check and debug routes
-app.get('/hello', (req, res) => {
-  res.send('Hello, World!');
-});
+// ✅ Health check & debug
+app.get('/hello', (req, res) => res.send('Hello, World!'));
 app.get('/env-check', (req, res) => {
   res.json({
     DATABASE_URL: !!process.env.DATABASE_URL,
@@ -97,28 +78,26 @@ app.get('/db-test', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
-// Ignore favicon requests
+app.get('/', (req, res) => res.send('API Root'));
 app.get('/favicon.ico', (req, res) => res.status(204).end());
 app.get('/favicon.png', (req, res) => res.status(204).end());
 
-// API routes
-app.use('/auth', authRoutes);
+// ✅ Routes
+app.use('/auth', rateLimit({ windowMs: 15 * 60 * 1000, max: 10 }), authRoutes);
 app.use('/teams', teamRoutes);
 app.use('/tasks', taskRoutes);
 app.use('/users', usersRouter);
 
-// Global error handler
+// ✅ Error handler
 app.use((err, req, res, next) => {
   console.error('Server error:', err);
   res.status(500).json({ error: 'Internal server error' });
 });
 
-// Test DB on startup
+// ✅ Confirm DB on startup
 db.raw('SELECT 1')
-  .then(() => console.log('Database connected successfully'))
-  .catch((err) => console.error('Database connection error:', err));
+  .then(() => console.log('✅ Database connected'))
+  .catch((err) => console.error('❌ Database connection failed:', err));
 
-// Export app (for Vercel or custom server)
 module.exports = app;
 
