@@ -22,51 +22,59 @@ const validateLogin = [
 
 // POST /auth/register
 router.post('/register', validateRegister, async (req, res) => {
-  
   const errors = validationResult(req);
-  if (!errors.isEmpty())
+  if (!errors.isEmpty()) {
+    console.warn('Validation failed:', errors.array());
     return res.status(400).json({ error: errors.array()[0].msg });
+  }
 
   const { username, email, password } = req.body;
 
   try {
-    // Check if user exists
+    // ✅ Check if user already exists
     const { data: existingUser, error: fetchError } = await supabase
       .from('users')
       .select('id')
       .or(`email.eq.${email},username.eq.${username}`)
-      .single();
+      .maybeSingle(); // avoids crashing if no record found
+
+    if (fetchError) {
+      console.error('Fetch error:', fetchError);
+      return res.status(500).json({ error: 'Error checking for existing user' });
+    }
 
     if (existingUser) {
       return res.status(400).json({ error: 'Email or username already exists' });
     }
 
-    // Hash password
+    // ✅ Hash password
     const password_hash = await bcrypt.hash(password, 10);
 
-    // Insert new user
+    // ✅ Insert user
     const { data: newUser, error: insertError } = await supabase
       .from('users')
       .insert([{ username, email, password_hash }])
       .select('id, username, email')
       .single();
 
-    if (insertError) throw insertError;
+    if (insertError) {
+      console.error('Insert error:', insertError);
+      return res.status(500).json({ error: 'Error creating user' });
+    }
 
-    // Create JWT token
+    // ✅ Sign JWT
     const token = jwt.sign(
       { id: newUser.id, email: newUser.email },
       process.env.JWT_SECRET,
       { expiresIn: '1h' }
     );
 
-    res.status(201).json({ success: true, user: newUser, token });
+    return res.status(201).json({ success: true, user: newUser, token });
   } catch (err) {
-    console.error('Registration error:', err);
-    res.status(500).json({ error: 'Failed to register user' });
+    console.error('Unexpected error during registration:', err);
+    return res.status(500).json({ error: 'Failed to register user' });
   }
 });
-
 // POST /auth/login
 router.post('/login', validateLogin, async (req, res) => {
   const errors = validationResult(req);
