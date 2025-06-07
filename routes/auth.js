@@ -5,7 +5,7 @@ const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const { createClient } = require('@supabase/supabase-js');
 
-const supabase = createClient(process.env.SUPABASE_URL, eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl0eGxwbm5zcGFsd29teml2cGxjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDkyNDIzMjgsImV4cCI6MjA2NDgxODMyOH0.syswdeIfbzHItvLxzhxTKxjaYjlJh3JTtV_JvYM7uFo);
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
 // Validation middleware for register
 const validateRegister = [
