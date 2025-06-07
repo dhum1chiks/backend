@@ -29,6 +29,7 @@ const validateLogin = [
 
 // POST /auth/register
 router.post('/register', validateRegister, async (req, res) => {
+	console.log("register")
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     console.warn('Validation failed:', errors.array());
@@ -46,7 +47,7 @@ router.post('/register', validateRegister, async (req, res) => {
       .maybeSingle(); // avoids crashing if no record found
 
     if (fetchError) {
-      console.error('Fetch error:', fetchError);
+      console.error("Supabase fetch error:", fetchError);
       return res.status(500).json({ error: 'Error checking for existing user' });
     }
 
