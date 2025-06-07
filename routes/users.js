@@ -1,12 +1,17 @@
 const express = require('express');
 const router = express.Router();
-const { db } = require('../db');
+const supabase = require('../supabaseClient');
 const { isAuthenticated } = require('../middleware/isAuthenticated');
 
-// Get all users (for adding to teams)
+// ✅ Get all users (for adding to teams)
 router.get('/', isAuthenticated, async (req, res) => {
   try {
-    const users = await db('users').select('id', 'username');
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('id, username');
+
+    if (error) throw error;
+
     res.json(users);
   } catch (err) {
     console.error('Fetch users error:', err);
@@ -15,3 +20,4 @@ router.get('/', isAuthenticated, async (req, res) => {
 });
 
 module.exports = router;
+

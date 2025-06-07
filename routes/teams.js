@@ -1,27 +1,34 @@
 const express = require('express');
 const router = express.Router();
-const { db } = require('../db');
+const supabase = require('../supabaseClient');
 const { isAuthenticated } = require('../middleware/isAuthenticated');
 const { body, validationResult } = require('express-validator');
 
-// Create a team
+// ✅ Create a team
 router.post(
   '/',
   isAuthenticated,
   [body('name').notEmpty().trim().withMessage('Team name is required')],
   async (req, res) => {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
     const { name } = req.body;
     try {
-      const [team] = await db('teams')
+      // Create team
+      const { data: team, error: teamError } = await supabase
+        .from('teams')
         .insert({ name, created_by: req.user.id })
-        .returning('*');
+        .select()
+        .single();
+      if (teamError) throw teamError;
 
-      await db('memberships').insert({ team_id: team.id, user_id: req.user.id });
+      // Add creator as member
+      const { error: memberError } = await supabase
+        .from('memberships')
+        .insert({ team_id: team.id, user_id: req.user.id });
+      if (memberError) throw memberError;
+
       res.status(201).json(team);
     } catch (err) {
       console.error('Create team error:', err);
@@ -30,13 +37,22 @@ router.post(
   }
 );
 
-// Get all teams user is part of
+// ✅ Get all teams the user is a part of
 router.get('/', isAuthenticated, async (req, res) => {
   try {
-    const teams = await db('teams')
-      .join('memberships', 'teams.id', 'memberships.team_id')
-      .where('memberships.user_id', req.user.id)
-      .select('teams.*');
+    const { data: teams, error } = await supabase
+      .from('teams')
+      .select('teams.*')
+      .in(
+        'id',
+        supabase
+          .from('memberships')
+          .select('team_id')
+          .eq('user_id', req.user.id)
+      );
+
+    if (error) throw error;
+
     res.json(teams);
   } catch (err) {
     console.error('Fetch teams error:', err);
@@ -44,61 +60,89 @@ router.get('/', isAuthenticated, async (req, res) => {
   }
 });
 
-// Get team members
+// ✅ Get team members
 router.get('/:teamId/members', isAuthenticated, async (req, res) => {
   const { teamId } = req.params;
   try {
-    // Check if user is a member of the team
-    const membership = await db('memberships')
-      .where({ team_id: teamId, user_id: req.user.id })
-      .first();
+    // Check membership
+    const { data: membership } = await supabase
+      .from('memberships')
+      .select()
+      .match({ team_id: teamId, user_id: req.user.id })
+      .maybeSingle();
+
     if (!membership) {
       return res.status(403).json({ error: 'You are not a member of this team' });
     }
 
-    const members = await db('memberships')
-      .join('users', 'memberships.user_id', 'users.id')
-      .where('memberships.team_id', teamId)
-      .select('users.id', 'users.username');
-    res.json(members);
+    // Fetch members
+    const { data: members, error } = await supabase
+      .from('memberships')
+      .select('users(id, username)')
+      .eq('team_id', teamId);
+
+    if (error) throw error;
+
+    const formatted = members.map((m) => m.users);
+    res.json(formatted);
   } catch (err) {
     console.error('Fetch members error:', err);
     res.status(500).json({ error: 'Failed to fetch team members' });
   }
 });
 
-// Add a member to a team
+// ✅ Add member to team
 router.post(
   '/:teamId/members',
   isAuthenticated,
   [body('userId').notEmpty().withMessage('User ID is required')],
   async (req, res) => {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-    const { userId } = req.body;
     const { teamId } = req.params;
+    const { userId } = req.body;
+
     try {
-      const team = await db('teams').where({ id: teamId }).first();
-      if (!team) {
-        return res.status(404).json({ error: 'Team not found' });
-      }
+      // Validate team exists
+      const { data: team } = await supabase
+        .from('teams')
+        .select()
+        .eq('id', teamId)
+        .single();
+
+      if (!team) return res.status(404).json({ error: 'Team not found' });
       if (team.created_by !== req.user.id) {
         return res.status(403).json({ error: 'Only team creator can add members' });
       }
-      const userExists = await db('users').where({ id: userId }).first();
-      if (!userExists) {
-        return res.status(404).json({ error: 'User not found' });
-      }
-      const existingMembership = await db('memberships')
-        .where({ team_id: teamId, user_id: userId })
-        .first();
-      if (existingMembership) {
+
+      // Check user exists
+      const { data: user } = await supabase
+        .from('users')
+        .select()
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (!user) return res.status(404).json({ error: 'User not found' });
+
+      // Check membership
+      const { data: membership } = await supabase
+        .from('memberships')
+        .select()
+        .match({ team_id: teamId, user_id: userId })
+        .maybeSingle();
+
+      if (membership) {
         return res.status(400).json({ error: 'User is already a member of this team' });
       }
-      await db('memberships').insert({ team_id: teamId, user_id: userId });
+
+      // Insert membership
+      const { error } = await supabase
+        .from('memberships')
+        .insert({ team_id: teamId, user_id: userId });
+
+      if (error) throw error;
+
       res.json({ message: 'Member added' });
     } catch (err) {
       console.error('Add member error:', err);
@@ -107,20 +151,27 @@ router.post(
   }
 );
 
-// Delete a team
+// ✅ Delete a team
 router.delete('/:teamId', isAuthenticated, async (req, res) => {
   const { teamId } = req.params;
+
   try {
-    const team = await db('teams').where({ id: teamId }).first();
-    if (!team) {
-      return res.status(404).json({ error: 'Team not found' });
-    }
+    const { data: team } = await supabase
+      .from('teams')
+      .select()
+      .eq('id', teamId)
+      .single();
+
+    if (!team) return res.status(404).json({ error: 'Team not found' });
     if (team.created_by !== req.user.id) {
       return res.status(403).json({ error: 'Only team creator can delete team' });
     }
-    await db('memberships').where({ team_id: teamId }).del();
-    await db('tasks').where({ team_id: teamId }).del();
-    await db('teams').where({ id: teamId }).del();
+
+    // Delete team-related data
+    await supabase.from('memberships').delete().eq('team_id', teamId);
+    await supabase.from('tasks').delete().eq('team_id', teamId);
+    await supabase.from('teams').delete().eq('id', teamId);
+
     res.json({ message: 'Team deleted' });
   } catch (err) {
     console.error('Delete team error:', err);
@@ -129,3 +180,4 @@ router.delete('/:teamId', isAuthenticated, async (req, res) => {
 });
 
 module.exports = router;
+

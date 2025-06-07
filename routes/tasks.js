@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { db } = require('../db');
+const supabase = require('../supabaseClient');
 const { isAuthenticated } = require('../middleware/isAuthenticated');
 const { body, query, validationResult } = require('express-validator');
 
-// Middleware to check if user is a member of the task's team
+// ✅ Helper: Check if user is a member of the team
 const isTeamMember = async (req, res, next) => {
   try {
     const { team_id } = req.body;
@@ -12,31 +12,36 @@ const isTeamMember = async (req, res, next) => {
     let teamId = team_id;
 
     if (!teamId && taskId) {
-      const task = await db('tasks').where({ id: taskId }).first();
-      if (!task) {
-        return res.status(404).json({ error: 'Task not found' });
-      }
+      const { data: task, error } = await supabase
+        .from('tasks')
+        .select('team_id')
+        .eq('id', taskId)
+        .single();
+
+      if (!task || error) return res.status(404).json({ error: 'Task not found' });
       teamId = task.team_id;
     }
 
-    if (!teamId) {
-      return res.status(400).json({ error: 'Team ID is required' });
-    }
+    if (!teamId) return res.status(400).json({ error: 'Team ID is required' });
 
-    const membership = await db('memberships')
-      .where({ team_id: teamId, user_id: req.user.id })
-      .first();
+    const { data: membership } = await supabase
+      .from('memberships')
+      .select()
+      .match({ team_id: teamId, user_id: req.user.id })
+      .maybeSingle();
+
     if (!membership) {
       return res.status(403).json({ error: 'You are not a member of this team' });
     }
+
     next();
   } catch (err) {
-    console.error('Team membership check error:', err);
+    console.error('Membership check error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 };
 
-// Create a task
+// ✅ POST /tasks/create-task
 router.post(
   '/create-task',
   isAuthenticated,
@@ -49,33 +54,40 @@ router.post(
   isTeamMember,
   async (req, res) => {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
     const { title, description, team_id, assigned_to_id, due_date } = req.body;
 
     try {
       if (assigned_to_id) {
-        const assigneeMembership = await db('memberships')
-          .where({ team_id, user_id: assigned_to_id })
-          .first();
+        const { data: assigneeMembership } = await supabase
+          .from('memberships')
+          .select()
+          .match({ team_id, user_id: assigned_to_id })
+          .maybeSingle();
+
         if (!assigneeMembership) {
-          return res.status(400).json({ error: 'Assigned user must be a member of the team' });
+          return res.status(400).json({ error: 'Assigned user must be a team member' });
         }
       }
 
-      const [task] = await db('tasks')
-        .insert({
-          title,
-          description,
-          team_id,
-          assigned_to_id,
-          assigned_by_id: req.user.id, // Set the user who assigns the task
-          created_by: req.user.id,
-          due_date,
-        })
-        .returning('*');
+      const { data: task, error } = await supabase
+        .from('tasks')
+        .insert([
+          {
+            title,
+            description,
+            team_id,
+            assigned_to_id,
+            assigned_by_id: req.user.id,
+            created_by: req.user.id,
+            due_date,
+          },
+        ])
+        .select()
+        .single();
+
+      if (error) throw error;
 
       res.status(201).json(task);
     } catch (err) {
@@ -85,7 +97,7 @@ router.post(
   }
 );
 
-// Get all tasks for a team or assigned to a user
+// ✅ GET /tasks/get-task
 router.get(
   '/get-task',
   isAuthenticated,
@@ -95,26 +107,35 @@ router.get(
   ],
   async (req, res) => {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
     const { team_id, assigned_to_id } = req.query;
 
     try {
-      let query = db('tasks')
-        .join('memberships', 'tasks.team_id', 'memberships.team_id')
-        .where('memberships.user_id', req.user.id)
-        .select('tasks.*');
+      // First, get all team_ids this user belongs to
+      const { data: memberships } = await supabase
+        .from('memberships')
+        .select('team_id')
+        .eq('user_id', req.user.id);
+
+      const teamIds = memberships.map((m) => m.team_id);
+
+      let query = supabase
+        .from('tasks')
+        .select('*')
+        .in('team_id', teamIds);
 
       if (team_id) {
-        query = query.where('tasks.team_id', team_id);
+        query = query.eq('team_id', team_id);
       }
       if (assigned_to_id) {
-        query = query.where('tasks.assigned_to_id', assigned_to_id);
+        query = query.eq('assigned_to_id', assigned_to_id);
       }
 
-      const tasks = await query;
+      const { data: tasks, error } = await query;
+
+      if (error) throw error;
+
       res.json(tasks);
     } catch (err) {
       console.error('Fetch tasks error:', err);
@@ -123,7 +144,7 @@ router.get(
   }
 );
 
-// Update a task
+// ✅ PUT /tasks/:id
 router.put(
   '/:id',
   isAuthenticated,
@@ -135,33 +156,43 @@ router.put(
   isTeamMember,
   async (req, res) => {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
     const { id } = req.params;
     const { title, description, assigned_to_id, due_date, status } = req.body;
 
     try {
       if (assigned_to_id) {
-        const task = await db('tasks').where({ id }).first();
-        const assigneeMembership = await db('memberships')
-          .where({ team_id: task.team_id, user_id: assigned_to_id })
-          .first();
+        const { data: task } = await supabase
+          .from('tasks')
+          .select('team_id')
+          .eq('id', id)
+          .single();
+
+        const { data: assigneeMembership } = await supabase
+          .from('memberships')
+          .select()
+          .match({ team_id: task.team_id, user_id: assigned_to_id })
+          .maybeSingle();
+
         if (!assigneeMembership) {
           return res.status(400).json({ error: 'Assigned user must be a member of the team' });
         }
       }
 
-      const updatedRows = await db('tasks')
-        .where({ id })
-        .update({ title, description, assigned_to_id, due_date, status });
+      const { error: updateError } = await supabase
+        .from('tasks')
+        .update({ title, description, assigned_to_id, due_date, status })
+        .eq('id', id);
 
-      if (updatedRows === 0) {
-        return res.status(404).json({ error: 'Task not found' });
-      }
+      if (updateError) throw updateError;
 
-      const updatedTask = await db('tasks').where({ id }).first();
+      const { data: updatedTask } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('id', id)
+        .single();
+
       res.json(updatedTask);
     } catch (err) {
       console.error('Update task error:', err);
@@ -170,15 +201,14 @@ router.put(
   }
 );
 
-// Delete a task
+// ✅ DELETE /tasks/:id
 router.delete('/:id', isAuthenticated, isTeamMember, async (req, res) => {
   const { id } = req.params;
 
   try {
-    const deletedRows = await db('tasks').where({ id }).del();
-    if (deletedRows === 0) {
-      return res.status(404).json({ error: 'Task not found' });
-    }
+    const { error } = await supabase.from('tasks').delete().eq('id', id);
+    if (error) throw error;
+
     res.json({ message: 'Task deleted' });
   } catch (err) {
     console.error('Delete task error:', err);
@@ -187,3 +217,4 @@ router.delete('/:id', isAuthenticated, isTeamMember, async (req, res) => {
 });
 
 module.exports = router;
+
