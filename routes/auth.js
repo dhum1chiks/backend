@@ -122,5 +122,23 @@ router.post('/login', validateLogin, async (req, res) => {
   }
 });
 
+router.get('/users', async (req, res) => {
+  try {
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('id, username, email, created_at, updated_at');
+
+    if (error) {
+      console.error('Error fetching users:', error);
+      return res.status(500).json({ error: 'Failed to fetch users' });
+    }
+
+    res.json({ success: true, users });
+  } catch (err) {
+    console.error('Unexpected error fetching users:', err);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
 module.exports = router;
 
