@@ -41,7 +41,23 @@ app.use('/auth', rateLimit({ windowMs: 15 * 60 * 1000, max: 10 }), authRoutes);
 
 // Simple test route
 app.get('/hello', (req, res) => res.send('Hello from Supabase-powered backend!'));
+app.get('/users', async (req, res) => {
+  try {
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('id, username, email, created_at, updated_at');
 
+    if (error) {
+      console.error('Error fetching users:', error);
+      return res.status(500).json({ error: 'Failed to fetch users' });
+    }
+
+    res.json({ success: true, users });
+  } catch (err) {
+    console.error('Unexpected error fetching users:', err);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
 // Example of a protected route
 app.get('/protected', isAuthenticated, (req, res) => {
   res.json({ message: `Hello, user ${req.user.email}` });
