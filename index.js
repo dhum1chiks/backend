@@ -11,9 +11,15 @@ const app = express();
 
 app.use(express.json());
 app.use(cors({
-  origin: ['https://frontend-alpha-seven-16.vercel.app'], // replace with your frontend URL
+  origin: [
+    'http://localhost:3001',                            // your local frontend
+    'https://frontend-alpha-seven-16.vercel.app'        // your deployed frontend
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
 }));
+
 
 // Health check route
 app.get('/hello', (req, res) => {
