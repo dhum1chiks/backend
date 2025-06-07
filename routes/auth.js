@@ -3,35 +3,43 @@ const router = express.Router();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
-const supabase = require('../supabaseClient');
+const { createClient } = require('@supabase/supabase-js');
 
-// ✅ Validation middleware
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+
+// Validation middleware for register
 const validateRegister = [
   body('username').trim().notEmpty().withMessage('Username is required'),
   body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
   body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
 ];
 
+// Validation middleware for login
 const validateLogin = [
   body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
   body('password').notEmpty().withMessage('Password is required'),
 ];
 
-// ✅ POST /auth/register
+// POST /auth/register
 router.post('/register', validateRegister, async (req, res) => {
+  
   const errors = validationResult(req);
-  if (!errors.isEmpty()) return res.status(400).json({ error: errors.array()[0].msg });
+  if (!errors.isEmpty())
+    return res.status(400).json({ error: errors.array()[0].msg });
 
   const { username, email, password } = req.body;
+
   try {
-    // Check if user already exists
+    // Check if user exists
     const { data: existingUser, error: fetchError } = await supabase
       .from('users')
       .select('id')
       .or(`email.eq.${email},username.eq.${username}`)
       .single();
 
-    if (existingUser) return res.status(400).json({ error: 'Email or username already exists' });
+    if (existingUser) {
+      return res.status(400).json({ error: 'Email or username already exists' });
+    }
 
     // Hash password
     const password_hash = await bcrypt.hash(password, 10);
@@ -45,10 +53,12 @@ router.post('/register', validateRegister, async (req, res) => {
 
     if (insertError) throw insertError;
 
-    // Generate token
-    const token = jwt.sign({ id: newUser.id, email: newUser.email }, process.env.JWT_SECRET, {
-      expiresIn: '1h',
-    });
+    // Create JWT token
+    const token = jwt.sign(
+      { id: newUser.id, email: newUser.email },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
 
     res.status(201).json({ success: true, user: newUser, token });
   } catch (err) {
@@ -57,17 +67,14 @@ router.post('/register', validateRegister, async (req, res) => {
   }
 });
 
-// ✅ GET /auth/register (debug block)
-router.get('/register', (req, res) => {
-  res.status(405).json({ error: 'Use POST to register' });
-});
-
-// ✅ POST /auth/login
+// POST /auth/login
 router.post('/login', validateLogin, async (req, res) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty()) return res.status(400).json({ error: errors.array()[0].msg });
+  if (!errors.isEmpty())
+    return res.status(400).json({ error: errors.array()[0].msg });
 
   const { email, password } = req.body;
+
   try {
     const { data: user, error } = await supabase
       .from('users')
@@ -75,25 +82,28 @@ router.post('/login', validateLogin, async (req, res) => {
       .eq('email', email)
       .single();
 
-    if (error || !user) return res.status(401).json({ error: 'Invalid email or password' });
+    if (error || !user)
+      return res.status(401).json({ error: 'Invalid email or password' });
 
     const isMatch = await bcrypt.compare(password, user.password_hash);
-    if (!isMatch) return res.status(401).json({ error: 'Invalid email or password' });
+    if (!isMatch)
+      return res.status(401).json({ error: 'Invalid email or password' });
 
-    const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET, {
-      expiresIn: '1h',
+    const token = jwt.sign(
+      { id: user.id, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    res.json({
+      success: true,
+      user: { id: user.id, username: user.username, email: user.email },
+      token,
     });
-
-    res.json({ success: true, user: { id: user.id, username: user.username, email: user.email }, token });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Failed to login' });
   }
-});
-
-// ✅ POST /auth/logout (stateless - just client-side JWT clear)
-router.post('/logout', (req, res) => {
-  res.json({ success: true, message: 'Logout handled on client (stateless JWT)' });
 });
 
 module.exports = router;
