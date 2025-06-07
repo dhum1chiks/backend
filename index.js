@@ -6,8 +6,11 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const { createClient } = require('@supabase/supabase-js');
 
-// Import routes and middleware
+// Import routes
 const authRoutes = require('./routes/auth');
+const taskRoutes = require('./routes/tasks');
+const teamRoutes = require('./routes/teams');
+const userRoutes = require('./routes/users');
 const { isAuthenticated } = require('./middleware/isAuthenticated');
 
 const app = express();
@@ -36,28 +39,17 @@ app.use(cors({
   credentials: true,
 }));
 
-// Rate limit
+// Rate-limited auth routes
 app.use('/auth', rateLimit({ windowMs: 15 * 60 * 1000, max: 10 }), authRoutes);
+
+// Mount other routes
+app.use('/tasks', taskRoutes);
+app.use('/teams', teamRoutes);
+app.use('/users', userRoutes);
 
 // Simple test route
 app.get('/hello', (req, res) => res.send('Hello from Supabase-powered backend!'));
-app.get('/users', async (req, res) => {
-  try {
-    const { data: users, error } = await supabase
-      .from('users')
-      .select('id, username, email, created_at, updated_at');
 
-    if (error) {
-      console.error('Error fetching users:', error);
-      return res.status(500).json({ error: 'Failed to fetch users' });
-    }
-
-    res.json({ success: true, users });
-  } catch (err) {
-    console.error('Unexpected error fetching users:', err);
-    res.status(500).json({ error: 'Failed to fetch users' });
-  }
-});
 // Example of a protected route
 app.get('/protected', isAuthenticated, (req, res) => {
   res.json({ message: `Hello, user ${req.user.email}` });
