@@ -8,6 +8,10 @@ const authRoutes = require('./routes/auth');
 const { isAuthenticated } = require('./middleware/isAuthenticated');
 
 const app = express();
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+console.log('Supabase URL:', supabaseUrl);
+console.log('Supabase Key:', supabaseAnonKey ? 'Present' : 'Missing');
 app.use(cors({
   origin: [
     'http://localhost:3001',                            // your local frontend
@@ -23,7 +27,7 @@ app.use(express.json());
 
 // Health check route
 app.get('/hello', (req, res) => {
-  res.send('Hello from Supabase-powered backend!');
+  res.send('Hello from Supabase-powered backend!',supabaseUrl,supabaseAnonKey);
 });
 
 // Rate limit and mount auth routes
