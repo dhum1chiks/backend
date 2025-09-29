@@ -5,8 +5,7 @@ const cookieParser = require('cookie-parser');
 const session = require('express-session');
 const passport = require('passport');
 const rateLimit = require('express-rate-limit');
-const { createServer } = require('http');
-const { Server } = require('socket.io');
+const Pusher = require('pusher');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -17,21 +16,14 @@ const milestoneRoutes = require('./routes/milestones');
 const { isAuthenticated } = require('./middleware/isAuthenticated');
 
 const app = express();
-const server = createServer(app);
 
-// Socket.io server (will work with polling on Vercel)
-const io = new Server(server, {
-  cors: {
-    origin: [
-      'http://localhost:3000',
-      'http://localhost:3002',
-      'https://frontend-alpha-seven-16.vercel.app',
-    ],
-    credentials: true,
-  },
-  // Allow polling transport for serverless compatibility
-  transports: ['polling', 'websocket'],
-  allowEIO3: true,
+// Initialize Pusher
+const pusher = new Pusher({
+  appId: "2057066",
+  key: "c30f759d527210673c85",
+  secret: "f95d0c1d0a0e86564c7e",
+  cluster: "ap1",
+  useTLS: true
 });
 
 // Middleware
@@ -93,49 +85,21 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-// Socket.io connection handling
-io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
+// Pusher helper functions for real-time events
+const triggerPusherEvent = (channel, event, data) => {
+  try {
+    pusher.trigger(channel, event, data);
+    console.log(`Pusher event triggered: ${channel} -> ${event}`);
+  } catch (error) {
+    console.error('Pusher trigger error:', error);
+  }
+};
 
-  // Join team room
-  socket.on('join-team', (teamId) => {
-    socket.join(`team-${teamId}`);
-    console.log(`User ${socket.id} joined team-${teamId}`);
-  });
-
-  // Leave team room
-  socket.on('leave-team', (teamId) => {
-    socket.leave(`team-${teamId}`);
-    console.log(`User ${socket.id} left team-${teamId}`);
-  });
-
-  // Handle team messages
-  socket.on('send-message', async (data) => {
-    try {
-      const { team_id, message, user_id } = data;
-
-      // Save message to database (simplified - would need proper implementation)
-      // const { data: savedMessage } = await supabase...
-
-      // Broadcast to team room
-      io.to(`team-${team_id}`).emit('new-message', {
-        team_id,
-        message,
-        user_id,
-        created_at: new Date()
-      });
-    } catch (error) {
-      console.error('Message send error:', error);
-    }
-  });
-
-  socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
-  });
-});
+// Export pusher for use in routes
+module.exports.pusher = pusher;
 
 // Start server
 const PORT = process.env.PORT || 5001;
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT} with Pusher real-time features`);
 });

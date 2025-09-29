@@ -3,6 +3,7 @@ const router = express.Router();
 const supabase = require('../supabaseClient');
 const { isAuthenticated } = require('../middleware/isAuthenticated');
 const { body, validationResult } = require('express-validator');
+const { pusher } = require('../index');
 
 // Create a new team
 router.post(
@@ -218,6 +219,186 @@ router.delete('/:teamId', isAuthenticated, async (req, res) => {
   } catch (err) {
     console.error('Delete team error:', err);
     res.status(500).json({ error: 'Failed to delete team' });
+  }
+});
+
+// Get messages for a team
+router.get('/:teamId/messages', isAuthenticated, async (req, res) => {
+  const { teamId } = req.params;
+  try {
+    // Verify user is a member of the team
+    const { data: membership } = await supabase
+      .from('memberships')
+      .select()
+      .match({ team_id: parseInt(teamId), user_id: req.user.id })
+      .maybeSingle();
+
+    if (!membership) {
+      // Check if user is team creator
+      const { data: team } = await supabase
+        .from('teams')
+        .select('created_by')
+        .eq('id', parseInt(teamId))
+        .single();
+
+      if (!team || team.created_by !== req.user.id) {
+        return res.status(403).json({ error: 'You are not a member of this team' });
+      }
+    }
+
+    // Fetch messages with user details
+    const { data: messages, error } = await supabase
+      .from('team_messages')
+      .select(`
+        id,
+        message,
+        user_id,
+        created_at,
+        users!team_messages_user_id_fkey (
+          username
+        )
+      `)
+      .eq('team_id', parseInt(teamId))
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Messages fetch error:', error);
+      return res.status(500).json({ error: 'Failed to fetch messages' });
+    }
+
+    const formatted = messages.map((msg) => ({
+      id: msg.id,
+      message: msg.message,
+      user_id: msg.user_id,
+      username: msg.users?.username || 'Unknown',
+      created_at: msg.created_at
+    }));
+
+    res.json(formatted);
+  } catch (err) {
+    console.error('Fetch messages error:', err);
+    res.status(500).json({ error: 'Failed to fetch messages' });
+  }
+});
+
+// Send a message to a team
+router.post(
+  '/:teamId/messages',
+  isAuthenticated,
+  [body('message').notEmpty().trim().withMessage('Message is required')],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { teamId } = req.params;
+    const { message } = req.body;
+
+    try {
+      // Verify user is a member of the team
+      const { data: membership } = await supabase
+        .from('memberships')
+        .select()
+        .match({ team_id: parseInt(teamId), user_id: req.user.id })
+        .maybeSingle();
+
+      if (!membership) {
+        // Check if user is team creator
+        const { data: team } = await supabase
+          .from('teams')
+          .select('created_by')
+          .eq('id', parseInt(teamId))
+          .single();
+
+        if (!team || team.created_by !== req.user.id) {
+          return res.status(403).json({ error: 'You are not a member of this team' });
+        }
+      }
+
+      // Save message to database
+      const { data: savedMessage, error: insertError } = await supabase
+        .from('team_messages')
+        .insert({
+          team_id: parseInt(teamId),
+          user_id: req.user.id,
+          message: message.trim()
+        })
+        .select(`
+          id,
+          message,
+          user_id,
+          created_at,
+          users!team_messages_user_id_fkey (
+            username
+          )
+        `)
+        .single();
+
+      if (insertError) {
+        console.error('Save message error:', insertError);
+        return res.status(500).json({ error: 'Failed to save message' });
+      }
+
+      const formattedMessage = {
+        id: savedMessage.id,
+        message: savedMessage.message,
+        user_id: savedMessage.user_id,
+        username: savedMessage.users?.username || 'Unknown',
+        created_at: savedMessage.created_at
+      };
+
+      // Trigger Pusher event for real-time updates
+      pusher.trigger(`team-${teamId}`, 'new-message', formattedMessage);
+
+      res.status(201).json(formattedMessage);
+    } catch (err) {
+      console.error('Send message error:', err);
+      res.status(500).json({ error: 'Failed to send message' });
+    }
+  }
+);
+
+// Delete a message
+router.delete('/messages/:messageId', isAuthenticated, async (req, res) => {
+  const { messageId } = req.params;
+
+  try {
+    // Get message to verify ownership and get team_id
+    const { data: message, error: fetchError } = await supabase
+      .from('team_messages')
+      .select('user_id, team_id')
+      .eq('id', parseInt(messageId))
+      .single();
+
+    if (fetchError || !message) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    if (message.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'You can only delete your own messages' });
+    }
+
+    // Delete message
+    const { error: deleteError } = await supabase
+      .from('team_messages')
+      .delete()
+      .eq('id', parseInt(messageId));
+
+    if (deleteError) {
+      console.error('Delete message error:', deleteError);
+      return res.status(500).json({ error: 'Failed to delete message' });
+    }
+
+    // Trigger Pusher event for real-time updates
+    pusher.trigger(`team-${message.team_id}`, 'message-deleted', {
+      messageId: parseInt(messageId)
+    });
+
+    res.json({ message: 'Message deleted' });
+  } catch (err) {
+    console.error('Delete message error:', err);
+    res.status(500).json({ error: 'Failed to delete message' });
   }
 });
 
