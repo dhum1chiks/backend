@@ -134,17 +134,21 @@ router.post(
 
     try {
       if (assigned_to_id) {
-        // Allow assigning to self if user is team creator
-        if (assigned_to_id === req.user.id) {
-          const { data: team, error: teamError } = await supabase
-            .from('teams')
-            .select('created_by')
-            .eq('id', team_id)
-            .single();
+        // Check if the current user is the team creator
+        const { data: team, error: teamError } = await supabase
+          .from('teams')
+          .select('created_by')
+          .eq('id', team_id)
+          .single();
 
-          if (!teamError && team.created_by === req.user.id) {
-            // User is assigning to themselves and they created the team - allow it
-          } else {
+        const isTeamCreator = !teamError && team.created_by === req.user.id;
+
+        if (isTeamCreator) {
+          // Team creators can assign tasks to anyone
+          console.log('Team creator assigning task - allowing assignment to any user');
+        } else {
+          // Non-creators can only assign to themselves if they're a team member
+          if (assigned_to_id === req.user.id) {
             // Check if user is a member
             const { data: membership, error } = await supabase
               .from('memberships')
@@ -156,18 +160,18 @@ router.post(
             if (error || !membership) {
               return res.status(400).json({ error: 'You must be a member of the team to assign tasks to yourself' });
             }
-          }
-        } else {
-          // Check if assigned user is a member of the team
-          const { data: assigneeMembership, error } = await supabase
-            .from('memberships')
-            .select('id')
-            .eq('team_id', team_id)
-            .eq('user_id', assigned_to_id)
-            .single();
+          } else {
+            // Check if assigned user is a member of the team
+            const { data: assigneeMembership, error } = await supabase
+              .from('memberships')
+              .select('id')
+              .eq('team_id', team_id)
+              .eq('user_id', assigned_to_id)
+              .single();
 
-          if (error || !assigneeMembership) {
-            return res.status(400).json({ error: 'Assigned user must be a member of the team' });
+            if (error || !assigneeMembership) {
+              return res.status(400).json({ error: 'Assigned user must be a member of the team' });
+            }
           }
         }
       }
