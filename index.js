@@ -130,15 +130,18 @@ app.delete('/teams/:id', (req, res) => {
 
 app.post('/teams/:id/members', (req, res) => {
   const { id } = req.params;
-  const { user_id } = req.body;
+  const { user_id, userId } = req.body;
 
-  if (!user_id) {
+  // Support both user_id and userId for compatibility
+  const userIdValue = user_id || userId;
+
+  if (!userIdValue) {
     return res.status(400).json({ error: 'User ID is required' });
   }
 
   const newMember = {
     team_id: parseInt(id),
-    user_id: parseInt(user_id),
+    user_id: parseInt(userIdValue),
     created_at: new Date().toISOString()
   };
 
