@@ -38,7 +38,7 @@ function isAuthenticated(req, res, next) {
   }
 }
 
-// Middleware to check if user is a member of the team
+// Middleware to check if user is a member of the team or team creator
 const isTeamMember = async (req, res, next) => {
   try {
     const { team_id } = req.body;
@@ -62,17 +62,32 @@ const isTeamMember = async (req, res, next) => {
       return res.status(400).json({ error: 'Team ID is required' });
     }
 
-    const { data: membership, error } = await supabase
+    // Check if user is a team member
+    const { data: membership, error: membershipError } = await supabase
       .from('memberships')
       .select('id')
       .eq('team_id', teamId)
       .eq('user_id', req.user.id)
       .single();
 
-    if (error || !membership) {
-      return res.status(403).json({ error: 'You are not a member of this team' });
+    if (membership && !membershipError) {
+      // User is a member of the team
+      return next();
     }
-    next();
+
+    // Check if user is the creator of the team
+    const { data: team, error: teamError } = await supabase
+      .from('teams')
+      .select('created_by')
+      .eq('id', teamId)
+      .single();
+
+    if (team && team.created_by === req.user.id) {
+      // User is the creator of the team
+      return next();
+    }
+
+    return res.status(403).json({ error: 'You are not a member of this team' });
   } catch (err) {
     console.error('Team membership check error:', err);
     res.status(500).json({ error: 'Server error' });
