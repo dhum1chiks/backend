@@ -262,43 +262,64 @@ router.put(
     const { title, description, assigned_to_id, due_date, status, milestone_id } = req.body;
 
     try {
+      // Get current task to validate team membership
+      const { data: currentTask, error: taskError } = await supabase
+        .from('tasks')
+        .select('team_id')
+        .eq('id', id)
+        .single();
+
+      if (taskError || !currentTask) {
+        return res.status(404).json({ error: 'Task not found' });
+      }
+
       if (assigned_to_id) {
-        const task = await db('tasks').where({ id }).first();
-        const assigneeMembership = await db('memberships')
-          .where({ team_id: task.team_id, user_id: assigned_to_id })
-          .first();
-        if (!assigneeMembership) {
+        const { data: assigneeMembership, error } = await supabase
+          .from('memberships')
+          .select('id')
+          .eq('team_id', currentTask.team_id)
+          .eq('user_id', assigned_to_id)
+          .single();
+
+        if (error || !assigneeMembership) {
           return res.status(400).json({ error: 'Assigned user must be a member of the team' });
         }
       }
 
       // Validate milestone if provided
       if (milestone_id) {
-        const task = await db('tasks').where({ id }).first();
-        const milestone = await db('milestones')
-          .where({ id: milestone_id, team_id: task.team_id })
-          .first();
-        if (!milestone) {
+        const { data: milestone, error } = await supabase
+          .from('milestones')
+          .select('id')
+          .eq('id', milestone_id)
+          .eq('team_id', currentTask.team_id)
+          .single();
+
+        if (error || !milestone) {
           return res.status(400).json({ error: 'Milestone must belong to the same team' });
         }
       }
 
-      const updatedRows = await db('tasks')
-        .where({ id })
-        .update({
-          title,
-          description,
-          assigned_to_id,
-          due_date,
-          status,
-          milestone_id: milestone_id !== undefined ? milestone_id : undefined
-        });
+      const updateData = {};
+      if (title !== undefined) updateData.title = title;
+      if (description !== undefined) updateData.description = description;
+      if (assigned_to_id !== undefined) updateData.assigned_to_id = assigned_to_id;
+      if (due_date !== undefined) updateData.due_date = due_date;
+      if (status !== undefined) updateData.status = status;
+      if (milestone_id !== undefined) updateData.milestone_id = milestone_id;
 
-      if (updatedRows === 0) {
-        return res.status(404).json({ error: 'Task not found' });
+      const { data: updatedTask, error: updateError } = await supabase
+        .from('tasks')
+        .update(updateData)
+        .eq('id', id)
+        .select('*')
+        .single();
+
+      if (updateError) {
+        console.error('Update task error:', updateError);
+        return res.status(500).json({ error: 'Failed to update task' });
       }
 
-      const updatedTask = await db('tasks').where({ id }).first();
       res.json(updatedTask);
     } catch (err) {
       console.error('Update task error:', err);
@@ -312,10 +333,16 @@ router.delete('/:id', isAuthenticated, isTeamMember, async (req, res) => {
   const { id } = req.params;
 
   try {
-    const deletedRows = await db('tasks').where({ id }).del();
-    if (deletedRows === 0) {
-      return res.status(404).json({ error: 'Task not found' });
+    const { error } = await supabase
+      .from('tasks')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Delete task error:', error);
+      return res.status(500).json({ error: 'Failed to delete task' });
     }
+
     res.json({ message: 'Task deleted' });
   } catch (err) {
     console.error('Delete task error:', err);
