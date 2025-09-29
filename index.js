@@ -116,6 +116,19 @@ app.get('/teams', (req, res) => {
   ]);
 });
 
+app.get('/teams/:id/members', (req, res) => {
+  res.json([
+    {
+      id: 1,
+      user_id: 1,
+      team_id: parseInt(req.params.id),
+      username: 'testuser',
+      email: 'test@example.com',
+      created_at: new Date().toISOString()
+    }
+  ]);
+});
+
 app.get('/tasks/get-task', (req, res) => {
   res.json([
     {
@@ -123,10 +136,25 @@ app.get('/tasks/get-task', (req, res) => {
       title: 'Test Task',
       description: 'This is a test task',
       team_id: 1,
+      assigned_to_id: 1,
       status: 'To Do',
+      priority: 'Medium',
       created_at: new Date().toISOString()
     }
   ]);
+});
+
+app.get('/tasks/time/active', (req, res) => {
+  // Return null for no active timer
+  res.json(null);
+});
+
+app.get('/milestones', (req, res) => {
+  res.json([]);
+});
+
+app.get('/tasks/reminders', (req, res) => {
+  res.json([]);
 });
 
 // Export for Vercel
