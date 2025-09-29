@@ -28,13 +28,26 @@ const pusher = new Pusher({
 
 // Middleware
 app.use(express.json());
+
+// CORS configuration - simplified for Vercel
 app.use(
   cors({
-    origin: [
-      'http://localhost:3000',
-      'http://localhost:3002',
-      'https://frontend-alpha-seven-16.vercel.app',
-    ],
+    origin: function (origin, callback) {
+      // Allow requests with no origin (mobile apps, curl, etc.)
+      if (!origin) return callback(null, true);
+
+      const allowedOrigins = [
+        'http://localhost:3000',
+        'http://localhost:3002',
+        'https://frontend-alpha-seven-16.vercel.app',
+      ];
+
+      if (allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
@@ -68,8 +81,26 @@ app.use('/teams', teamRoutes);
 app.use('/users', userRoutes);
 app.use('/milestones', milestoneRoutes);
 
-// Simple test route
+// Simple test routes
 app.get('/hello', (req, res) => res.send('Hello from Supabase-powered backend!'));
+
+// Test CORS route
+app.get('/test-cors', (req, res) => {
+  res.json({
+    message: 'CORS test successful',
+    origin: req.get('Origin'),
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Health check route
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
 
 // Example of a protected route
 app.get('/protected', isAuthenticated, (req, res) => {
