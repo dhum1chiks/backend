@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const supabase = require('../supabaseClient');
-const { isAuthenticated } = require('../middleware/isAuthenticated');
+const { isAuthenticated, isTeamMember } = require('../middleware/isAuthenticated');
 const { body, query, validationResult } = require('express-validator');
 const multer = require('multer');
 const path = require('path');

@@ -1,5 +1,6 @@
 // middleware/isAuthenticated.js
 const jwt = require('jsonwebtoken');
+const supabase = require('../supabaseClient');
 
 function isAuthenticated(req, res, next) {
   const authHeader = req.headers['authorization'];
@@ -37,5 +38,46 @@ function isAuthenticated(req, res, next) {
   }
 }
 
-module.exports = { isAuthenticated };
+// Middleware to check if user is a member of the team
+const isTeamMember = async (req, res, next) => {
+  try {
+    const { team_id } = req.body;
+    const { id: taskId } = req.params;
+    let teamId = team_id;
+
+    if (!teamId && taskId) {
+      const { data: task, error } = await supabase
+        .from('tasks')
+        .select('team_id')
+        .eq('id', taskId)
+        .single();
+
+      if (error || !task) {
+        return res.status(404).json({ error: 'Task not found' });
+      }
+      teamId = task.team_id;
+    }
+
+    if (!teamId) {
+      return res.status(400).json({ error: 'Team ID is required' });
+    }
+
+    const { data: membership, error } = await supabase
+      .from('memberships')
+      .select('id')
+      .eq('team_id', teamId)
+      .eq('user_id', req.user.id)
+      .single();
+
+    if (error || !membership) {
+      return res.status(403).json({ error: 'You are not a member of this team' });
+    }
+    next();
+  } catch (err) {
+    console.error('Team membership check error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+module.exports = { isAuthenticated, isTeamMember };
 

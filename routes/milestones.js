@@ -1,49 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const supabase = require('../supabaseClient');
-const { isAuthenticated } = require('../middleware/isAuthenticated');
+const { db } = require('../db');
+const { isAuthenticated, isTeamMember } = require('../middleware/isAuthenticated');
 const { body, validationResult } = require('express-validator');
-
-// Middleware to check if user is a member of the milestone's team
-const isTeamMember = async (req, res, next) => {
-  try {
-    const { team_id } = req.body;
-    const { id: milestoneId } = req.params;
-    let teamId = team_id;
-
-    if (!teamId && milestoneId) {
-      const { data: milestone, error } = await supabase
-        .from('milestones')
-        .select('team_id')
-        .eq('id', milestoneId)
-        .single();
-
-      if (error || !milestone) {
-        return res.status(404).json({ error: 'Milestone not found' });
-      }
-      teamId = milestone.team_id;
-    }
-
-    if (!teamId) {
-      return res.status(400).json({ error: 'Team ID is required' });
-    }
-
-    const { data: membership, error } = await supabase
-      .from('memberships')
-      .select('id')
-      .eq('team_id', teamId)
-      .eq('user_id', req.user.id)
-      .single();
-
-    if (error || !membership) {
-      return res.status(403).json({ error: 'You are not a member of this team' });
-    }
-    next();
-  } catch (err) {
-    console.error('Team membership check error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-};
 
 // Create a milestone
 router.post(
