@@ -221,13 +221,7 @@ router.get(
     const { team_id, assigned_to_id } = req.query;
 
     try {
-      let query = supabase
-        .from('tasks')
-        .select('tasks.*')
-        .eq('memberships.user_id', req.user.id);
-
-      // For joins, we need to handle differently in Supabase
-      // First get user's team memberships
+      // Get user's team memberships
       const { data: memberships, error: membershipError } = await supabase
         .from('memberships')
         .select('team_id')
@@ -238,16 +232,39 @@ router.get(
         return res.status(500).json({ error: 'Failed to fetch tasks' });
       }
 
-      const teamIds = memberships.map(m => m.team_id);
+      // Also get teams where user is the creator
+      const { data: createdTeams, error: createdTeamsError } = await supabase
+        .from('teams')
+        .select('id')
+        .eq('created_by', req.user.id);
+
+      if (createdTeamsError) {
+        console.error('Created teams fetch error:', createdTeamsError);
+        return res.status(500).json({ error: 'Failed to fetch tasks' });
+      }
+
+      // Combine team IDs from memberships and created teams
+      const membershipTeamIds = memberships ? memberships.map(m => m.team_id) : [];
+      const createdTeamIds = createdTeams ? createdTeams.map(t => t.id) : [];
+      const allTeamIds = [...new Set([...membershipTeamIds, ...createdTeamIds])];
+
+      if (allTeamIds.length === 0) {
+        return res.json([]);
+      }
 
       let taskQuery = supabase
         .from('tasks')
         .select('*')
-        .in('team_id', teamIds);
+        .in('team_id', allTeamIds);
 
       if (team_id) {
+        // If specific team requested, ensure user has access to it
+        if (!allTeamIds.includes(parseInt(team_id))) {
+          return res.status(403).json({ error: 'You do not have access to this team' });
+        }
         taskQuery = taskQuery.eq('team_id', team_id);
       }
+
       if (assigned_to_id) {
         taskQuery = taskQuery.eq('assigned_to_id', assigned_to_id);
       }
@@ -259,7 +276,7 @@ router.get(
         return res.status(500).json({ error: 'Failed to fetch tasks' });
       }
 
-      res.json(tasks);
+      res.json(tasks || []);
     } catch (err) {
       console.error('Fetch tasks error:', err);
       res.status(500).json({ error: 'Failed to fetch tasks' });
