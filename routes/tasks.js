@@ -483,13 +483,30 @@ router.delete('/attachments/:attachmentId', isAuthenticated, async (req, res) =>
 router.get('/:id/comments', isAuthenticated, isTeamMember, async (req, res) => {
   try {
     const { id } = req.params;
-    const comments = await db('comments')
-      .where({ task_id: id })
-      .join('users', 'comments.user_id', 'users.id')
-      .select('comments.*', 'users.username')
-      .orderBy('comments.created_at', 'asc');
 
-    res.json(comments);
+    const { data: comments, error } = await supabase
+      .from('comments')
+      .select(`
+        *,
+        users!comments_user_id_fkey (
+          username
+        )
+      `)
+      .eq('task_id', parseInt(id))
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Get comments error:', error);
+      return res.status(500).json({ error: 'Failed to get comments' });
+    }
+
+    // Format the response to match the expected structure
+    const formattedComments = comments.map(comment => ({
+      ...comment,
+      username: comment.users?.username
+    }));
+
+    res.json(formattedComments);
   } catch (err) {
     console.error('Get comments error:', err);
     res.status(500).json({ error: 'Failed to get comments' });
@@ -501,21 +518,43 @@ router.post('/:id/comments', isAuthenticated, isTeamMember, async (req, res) => 
   const { content } = req.body;
   try {
     const { id } = req.params;
-    const [comment] = await db('comments')
+
+    const { data: comment, error: insertError } = await supabase
+      .from('comments')
       .insert({
-        task_id: id,
+        task_id: parseInt(id),
         user_id: req.user.id,
         content
       })
-      .returning('*');
+      .select('*')
+      .single();
 
-    const commentWithUser = await db('comments')
-      .where({ 'comments.id': comment.id })
-      .join('users', 'comments.user_id', 'users.id')
-      .select('comments.*', 'users.username')
-      .first();
+    if (insertError) {
+      console.error('Add comment error:', insertError);
+      return res.status(500).json({ error: 'Failed to add comment' });
+    }
 
-    res.status(201).json(commentWithUser);
+    // Get comment with user info
+    const { data: commentWithUser, error: fetchError } = await supabase
+      .from('comments')
+      .select(`
+        *,
+        users!comments_user_id_fkey (
+          username
+        )
+      `)
+      .eq('id', comment.id)
+      .single();
+
+    if (fetchError) {
+      console.error('Fetch comment error:', fetchError);
+      return res.status(500).json({ error: 'Failed to fetch comment' });
+    }
+
+    res.status(201).json({
+      ...commentWithUser,
+      username: commentWithUser.users?.username
+    });
   } catch (err) {
     console.error('Add comment error:', err);
     res.status(500).json({ error: 'Failed to add comment' });
@@ -526,9 +565,15 @@ router.post('/:id/comments', isAuthenticated, isTeamMember, async (req, res) => 
 router.delete('/comments/:commentId', isAuthenticated, async (req, res) => {
   try {
     const { commentId } = req.params;
-    const comment = await db('comments').where({ id: commentId }).first();
 
-    if (!comment) {
+    // First check if comment exists and belongs to user
+    const { data: comment, error: fetchError } = await supabase
+      .from('comments')
+      .select('user_id')
+      .eq('id', parseInt(commentId))
+      .single();
+
+    if (fetchError || !comment) {
       return res.status(404).json({ error: 'Comment not found' });
     }
 
@@ -536,7 +581,16 @@ router.delete('/comments/:commentId', isAuthenticated, async (req, res) => {
       return res.status(403).json({ error: 'You can only delete your own comments' });
     }
 
-    await db('comments').where({ id: commentId }).del();
+    const { error: deleteError } = await supabase
+      .from('comments')
+      .delete()
+      .eq('id', parseInt(commentId));
+
+    if (deleteError) {
+      console.error('Delete comment error:', deleteError);
+      return res.status(500).json({ error: 'Failed to delete comment' });
+    }
+
     res.json({ message: 'Comment deleted' });
   } catch (err) {
     console.error('Delete comment error:', err);
