@@ -74,8 +74,26 @@ const isTeamMember = async (req, res, next) => {
       .eq('user_id', req.user.id)
       .single();
 
+    console.log('Team membership check:', {
+      teamId,
+      userId: req.user.id,
+      membership,
+      error
+    });
+
     if (error || !membership) {
-      return res.status(403).json({ error: 'You are not a member of this team' });
+      console.log('User not member of team, checking if they created it...');
+      // Check if user created the team
+      const { data: team, error: teamError } = await supabase
+        .from('teams')
+        .select('created_by')
+        .eq('id', teamId)
+        .single();
+
+      if (teamError || team.created_by !== req.user.id) {
+        return res.status(403).json({ error: 'You are not a member of this team' });
+      }
+      console.log('User is team creator, allowing access');
     }
     next();
   } catch (err) {
