@@ -98,8 +98,13 @@ const triggerPusherEvent = (channel, event, data) => {
 // Export pusher for use in routes
 module.exports.pusher = pusher;
 
-// Start server
-const PORT = process.env.PORT || 5001;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT} with Pusher real-time features`);
-});
+// Export for Vercel serverless functions
+module.exports = app;
+
+// For local development
+if (require.main === module) {
+  const PORT = process.env.PORT || 5001;
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT} with Pusher real-time features`);
+  });
+}
