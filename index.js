@@ -149,6 +149,52 @@ app.get('/tasks/time/active', (req, res) => {
   res.json(null);
 });
 
+app.get('/tasks/:id/attachments', (req, res) => {
+  res.json([]);
+});
+
+app.get('/tasks/:id/comments', (req, res) => {
+  res.json([]);
+});
+
+app.get('/tasks/:id/time', (req, res) => {
+  res.json({ logs: [], totalMinutes: 0, totalHours: 0 });
+});
+
+app.get('/users', (req, res) => {
+  res.json([
+    { id: 1, username: 'testuser', email: 'test@example.com' }
+  ]);
+});
+
+app.get('/users/profile', (req, res) => {
+  res.json({
+    id: 1,
+    username: 'testuser',
+    email: 'test@example.com',
+    bio: 'Test user',
+    avatar_url: null
+  });
+});
+
+app.get('/teams/invitations', (req, res) => {
+  res.json([]);
+});
+
+app.get('/teams/:id/messages', (req, res) => {
+  res.json([]);
+});
+
+app.post('/teams/:id/messages', (req, res) => {
+  res.json({
+    id: Date.now(),
+    team_id: parseInt(req.params.id),
+    user_id: 1,
+    message: req.body.message || 'Test message',
+    created_at: new Date().toISOString()
+  });
+});
+
 app.get('/milestones', (req, res) => {
   res.json([]);
 });
