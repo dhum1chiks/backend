@@ -402,4 +402,83 @@ router.delete('/messages/:messageId', isAuthenticated, async (req, res) => {
   }
 });
 
+// Get invitations for current user
+router.get('/invitations', isAuthenticated, async (req, res) => {
+  try {
+    const { data: invitations, error } = await supabase
+      .from('invitations')
+      .select(`
+        *,
+        teams!invitations_team_id_fkey (
+          name
+        ),
+        users!invitations_inviter_id_fkey (
+          username
+        )
+      `)
+      .eq('invitee_id', req.user.id)
+      .eq('status', 'pending');
+
+    if (error) {
+      console.error('Fetch invitations error:', error);
+      return res.status(500).json({ error: 'Failed to fetch invitations' });
+    }
+
+    const formatted = invitations.map(inv => ({
+      id: inv.id,
+      team_id: inv.team_id,
+      team_name: inv.teams?.name || 'Unknown Team',
+      inviter_name: inv.users?.username || 'Unknown User',
+      status: inv.status,
+      created_at: inv.created_at
+    }));
+
+    res.json(formatted);
+  } catch (err) {
+    console.error('Fetch invitations error:', err);
+    res.status(500).json({ error: 'Failed to fetch invitations' });
+  }
+});
+
+// Remove member from team
+router.delete('/:teamId/members/:userId', isAuthenticated, async (req, res) => {
+  const { teamId, userId } = req.params;
+
+  try {
+    // Check if user is team creator or the member themselves
+    const { data: team, error: teamError } = await supabase
+      .from('teams')
+      .select('created_by')
+      .eq('id', parseInt(teamId))
+      .single();
+
+    if (teamError || !team) {
+      return res.status(404).json({ error: 'Team not found' });
+    }
+
+    const canRemove = team.created_by === req.user.id || parseInt(userId) === req.user.id;
+
+    if (!canRemove) {
+      return res.status(403).json({ error: 'You can only remove yourself or be the team creator' });
+    }
+
+    // Remove membership
+    const { error: deleteError } = await supabase
+      .from('memberships')
+      .delete()
+      .eq('team_id', parseInt(teamId))
+      .eq('user_id', parseInt(userId));
+
+    if (deleteError) {
+      console.error('Remove member error:', deleteError);
+      return res.status(500).json({ error: 'Failed to remove member' });
+    }
+
+    res.json({ message: 'Member removed successfully' });
+  } catch (err) {
+    console.error('Remove member error:', err);
+    res.status(500).json({ error: 'Failed to remove member' });
+  }
+});
+
 module.exports = router;

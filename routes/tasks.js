@@ -43,8 +43,8 @@ const upload = multer({
   }
 });
 
-// Middleware to check if user is a member of the task's team
-const isTeamMember = async (req, res, next) => {
+// Middleware to check if user has access to task operations
+const canAccessTask = async (req, res, next) => {
   try {
     const { team_id } = req.body;
     const { id: taskId } = req.params;
@@ -53,7 +53,7 @@ const isTeamMember = async (req, res, next) => {
     if (!teamId && taskId) {
       const { data: task, error } = await supabase
         .from('tasks')
-        .select('team_id')
+        .select('team_id, created_by, assigned_to_id')
         .eq('id', taskId)
         .single();
 
@@ -61,12 +61,22 @@ const isTeamMember = async (req, res, next) => {
         return res.status(404).json({ error: 'Task not found' });
       }
       teamId = task.team_id;
+
+      // Allow access if user created the task, is assigned to it, or is a team member
+      const hasAccess = task.created_by === req.user.id ||
+                       task.assigned_to_id === req.user.id;
+
+      if (hasAccess) {
+        console.log('User has direct access to task (creator or assignee)');
+        return next();
+      }
     }
 
     if (!teamId) {
       return res.status(400).json({ error: 'Team ID is required' });
     }
 
+    // Check team membership
     const { data: membership, error } = await supabase
       .from('memberships')
       .select('id')
@@ -91,13 +101,13 @@ const isTeamMember = async (req, res, next) => {
         .single();
 
       if (teamError || team.created_by !== req.user.id) {
-        return res.status(403).json({ error: 'You are not a member of this team' });
+        return res.status(403).json({ error: 'You do not have access to this task' });
       }
       console.log('User is team creator, allowing access');
     }
     next();
   } catch (err) {
-    console.error('Team membership check error:', err);
+    console.error('Task access check error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 };
@@ -449,7 +459,7 @@ router.get('/reminders', isAuthenticated, async (req, res) => {
 });
 
 // Upload attachment to task
-router.post('/:id/attachments', isAuthenticated, isTeamMember, upload.single('file'), async (req, res) => {
+router.post('/:id/attachments', isAuthenticated, canAccessTask, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
@@ -478,7 +488,7 @@ router.post('/:id/attachments', isAuthenticated, isTeamMember, upload.single('fi
 });
 
 // Get attachments for task
-router.get('/:id/attachments', isAuthenticated, isTeamMember, async (req, res) => {
+router.get('/:id/attachments', isAuthenticated, canAccessTask, async (req, res) => {
   try {
     const { id } = req.params;
     const attachments = await db('attachments')
@@ -526,7 +536,7 @@ router.delete('/attachments/:attachmentId', isAuthenticated, async (req, res) =>
 });
 
 // Get comments for task
-router.get('/:id/comments', isAuthenticated, isTeamMember, async (req, res) => {
+router.get('/:id/comments', isAuthenticated, canAccessTask, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -560,7 +570,7 @@ router.get('/:id/comments', isAuthenticated, isTeamMember, async (req, res) => {
 });
 
 // Add comment to task
-router.post('/:id/comments', isAuthenticated, isTeamMember, async (req, res) => {
+router.post('/:id/comments', isAuthenticated, canAccessTask, async (req, res) => {
   const { content } = req.body;
   try {
     const { id } = req.params;
@@ -698,7 +708,7 @@ router.delete('/templates/:id', isAuthenticated, async (req, res) => {
 });
 
 // Start time tracking for a task
-router.post('/:id/time/start', isAuthenticated, isTeamMember, async (req, res) => {
+router.post('/:id/time/start', isAuthenticated, canAccessTask, async (req, res) => {
   try {
     const { id } = req.params;
     const { description } = req.body;
@@ -740,7 +750,7 @@ router.post('/:id/time/start', isAuthenticated, isTeamMember, async (req, res) =
 });
 
 // Stop time tracking for a task
-router.post('/:id/time/stop', isAuthenticated, isTeamMember, async (req, res) => {
+router.post('/:id/time/stop', isAuthenticated, canAccessTask, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -769,7 +779,7 @@ router.post('/:id/time/stop', isAuthenticated, isTeamMember, async (req, res) =>
 });
 
 // Get time logs for a task
-router.get('/:id/time', isAuthenticated, isTeamMember, async (req, res) => {
+router.get('/:id/time', isAuthenticated, canAccessTask, async (req, res) => {
   try {
     const { id } = req.params;
     const timeLogs = await db('time_logs')
