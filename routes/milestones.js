@@ -98,7 +98,7 @@ router.get('/team/:teamId', isAuthenticated, async (req, res) => {
   const { teamId } = req.params;
   
   try {
-    // Check if user is a member of the team
+    // Check if user is a member of the team or the team creator
     const { data: membership, error: membershipError } = await supabase
       .from('memberships')
       .select('id')
@@ -106,7 +106,22 @@ router.get('/team/:teamId', isAuthenticated, async (req, res) => {
       .eq('user_id', req.user.id)
       .single();
 
-    if (membershipError || !membership) {
+    let isAuthorized = !membershipError && membership;
+
+    if (!isAuthorized) {
+      // Check if user is the team creator
+      const { data: team, error: teamError } = await supabase
+        .from('teams')
+        .select('created_by')
+        .eq('id', teamId)
+        .single();
+
+      if (!teamError && team.created_by === req.user.id) {
+        isAuthorized = true;
+      }
+    }
+
+    if (!isAuthorized) {
       return res.status(403).json({ error: 'You are not a member of this team' });
     }
 

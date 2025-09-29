@@ -291,7 +291,7 @@ router.put(
       // Get current task to validate team membership
       const { data: currentTask, error: taskError } = await supabase
         .from('tasks')
-        .select('team_id')
+        .select('team_id, created_by')
         .eq('id', id)
         .single();
 
@@ -299,21 +299,50 @@ router.put(
         return res.status(404).json({ error: 'Task not found' });
       }
 
-      if (assigned_to_id) {
-        const { data: assigneeMembership, error } = await supabase
+      // Check if user can update this task (task creator or team creator)
+      const { data: team, error: teamError } = await supabase
+        .from('teams')
+        .select('created_by')
+        .eq('id', currentTask.team_id)
+        .single();
+
+      const canUpdate = currentTask.created_by === req.user.id || (team && team.created_by === req.user.id);
+
+      if (!canUpdate) {
+        // Check if user is a team member
+        const { data: membership, error: membershipError } = await supabase
           .from('memberships')
           .select('id')
           .eq('team_id', currentTask.team_id)
-          .eq('user_id', assigned_to_id)
+          .eq('user_id', req.user.id)
           .single();
 
-        if (error || !assigneeMembership) {
-          return res.status(400).json({ error: 'Assigned user must be a member of the team' });
+        if (membershipError || !membership) {
+          return res.status(403).json({ error: 'You do not have permission to update this task' });
+        }
+      }
+
+      if (assigned_to_id !== undefined) {
+        // Allow assigning to self if user is team creator or task creator
+        if (assigned_to_id === req.user.id) {
+          // User is assigning to themselves - allow if they can update the task
+        } else {
+          // Check if assigned user is a member of the team
+          const { data: assigneeMembership, error } = await supabase
+            .from('memberships')
+            .select('id')
+            .eq('team_id', currentTask.team_id)
+            .eq('user_id', assigned_to_id)
+            .single();
+
+          if (error || !assigneeMembership) {
+            return res.status(400).json({ error: 'Assigned user must be a member of the team' });
+          }
         }
       }
 
       // Validate milestone if provided
-      if (milestone_id) {
+      if (milestone_id !== undefined) {
         const { data: milestone, error } = await supabase
           .from('milestones')
           .select('id')
