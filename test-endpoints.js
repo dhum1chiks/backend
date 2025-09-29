@@ -70,6 +70,11 @@ async function runTests() {
   if (await testEndpoint('GET', '/tasks/1/comments', null, 'Get task comments')) passed++; else failed++;
   if (await testEndpoint('GET', '/tasks/1/time', null, 'Get task time logs')) passed++; else failed++;
 
+  // Test timer control endpoints
+  if (await testEndpoint('POST', '/tasks/1/time/start', { description: 'Test work' }, 'Start timer')) passed++; else failed++;
+  if (await testEndpoint('POST', '/tasks/1/time/stop', {}, 'Stop timer')) passed++; else failed++;
+  if (await testEndpoint('DELETE', '/tasks/time/123', null, 'Delete time log')) passed++; else failed++;
+
   // Test user endpoints
   if (await testEndpoint('GET', '/users', null, 'Get users')) passed++; else failed++;
   if (await testEndpoint('GET', '/users/profile', null, 'Get user profile')) passed++; else failed++;
