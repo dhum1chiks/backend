@@ -468,9 +468,10 @@ router.post('/:id/attachments', isAuthenticated, canAccessTask, upload.single('f
     const { id } = req.params;
     const { filename, originalname, path: filePath, mimetype, size } = req.file;
 
-    const [attachment] = await db('attachments')
+    const { data: attachment, error } = await supabase
+      .from('attachments')
       .insert({
-        task_id: id,
+        task_id: parseInt(id),
         filename,
         original_name: originalname,
         path: filePath,
@@ -478,7 +479,13 @@ router.post('/:id/attachments', isAuthenticated, canAccessTask, upload.single('f
         size,
         uploaded_by: req.user.id
       })
-      .returning('*');
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error('Upload attachment error:', error);
+      return res.status(500).json({ error: 'Failed to upload attachment' });
+    }
 
     res.status(201).json(attachment);
   } catch (err) {
@@ -491,12 +498,29 @@ router.post('/:id/attachments', isAuthenticated, canAccessTask, upload.single('f
 router.get('/:id/attachments', isAuthenticated, canAccessTask, async (req, res) => {
   try {
     const { id } = req.params;
-    const attachments = await db('attachments')
-      .where({ task_id: id })
-      .join('users', 'attachments.uploaded_by', 'users.id')
-      .select('attachments.*', 'users.username as uploaded_by_name');
 
-    res.json(attachments);
+    const { data: attachments, error } = await supabase
+      .from('attachments')
+      .select(`
+        *,
+        users!attachments_uploaded_by_fkey (
+          username
+        )
+      `)
+      .eq('task_id', parseInt(id));
+
+    if (error) {
+      console.error('Get attachments error:', error);
+      return res.status(500).json({ error: 'Failed to get attachments' });
+    }
+
+    // Format the response to match the expected structure
+    const formattedAttachments = attachments.map(attachment => ({
+      ...attachment,
+      uploaded_by_name: attachment.users?.username
+    }));
+
+    res.json(formattedAttachments);
   } catch (err) {
     console.error('Get attachments error:', err);
     res.status(500).json({ error: 'Failed to get attachments' });
@@ -507,19 +531,37 @@ router.get('/:id/attachments', isAuthenticated, canAccessTask, async (req, res) 
 router.delete('/attachments/:attachmentId', isAuthenticated, async (req, res) => {
   try {
     const { attachmentId } = req.params;
-    const attachment = await db('attachments').where({ id: attachmentId }).first();
 
-    if (!attachment) {
+    const { data: attachment, error: fetchError } = await supabase
+      .from('attachments')
+      .select('*')
+      .eq('id', parseInt(attachmentId))
+      .single();
+
+    if (fetchError || !attachment) {
       return res.status(404).json({ error: 'Attachment not found' });
     }
 
     // Check if user uploaded it or is team member
     if (attachment.uploaded_by !== req.user.id) {
-      const task = await db('tasks').where({ id: attachment.task_id }).first();
-      const membership = await db('memberships')
-        .where({ team_id: task.team_id, user_id: req.user.id })
-        .first();
-      if (!membership) {
+      const { data: task, error: taskError } = await supabase
+        .from('tasks')
+        .select('team_id')
+        .eq('id', attachment.task_id)
+        .single();
+
+      if (taskError || !task) {
+        return res.status(404).json({ error: 'Task not found' });
+      }
+
+      const { data: membership, error: membershipError } = await supabase
+        .from('memberships')
+        .select('id')
+        .eq('team_id', task.team_id)
+        .eq('user_id', req.user.id)
+        .single();
+
+      if (membershipError || !membership) {
         return res.status(403).json({ error: 'Not authorized to delete this attachment' });
       }
     }
@@ -527,7 +569,16 @@ router.delete('/attachments/:attachmentId', isAuthenticated, async (req, res) =>
     // Delete file from disk
     fs.unlinkSync(attachment.path);
 
-    await db('attachments').where({ id: attachmentId }).del();
+    const { error: deleteError } = await supabase
+      .from('attachments')
+      .delete()
+      .eq('id', parseInt(attachmentId));
+
+    if (deleteError) {
+      console.error('Delete attachment error:', deleteError);
+      return res.status(500).json({ error: 'Failed to delete attachment' });
+    }
+
     res.json({ message: 'Attachment deleted' });
   } catch (err) {
     console.error('Delete attachment error:', err);
@@ -657,12 +708,18 @@ router.delete('/comments/:commentId', isAuthenticated, async (req, res) => {
 // Get all task templates (default + user created)
 router.get('/templates', isAuthenticated, async (req, res) => {
   try {
-    const templates = await db('task_templates')
-      .where({ is_default: true })
-      .orWhere({ created_by: req.user.id })
+    const { data: templates, error } = await supabase
+      .from('task_templates')
       .select('*')
-      .orderBy('is_default', 'desc')
-      .orderBy('name');
+      .or(`is_default.eq.true,created_by.eq.${req.user.id}`)
+      .order('is_default', { ascending: false })
+      .order('name', { ascending: true });
+
+    if (error) {
+      console.error('Get templates error:', error);
+      return res.status(500).json({ error: 'Failed to get templates' });
+    }
+
     res.json(templates);
   } catch (err) {
     console.error('Get templates error:', err);
@@ -674,7 +731,8 @@ router.get('/templates', isAuthenticated, async (req, res) => {
 router.post('/templates', isAuthenticated, async (req, res) => {
   const { name, title_template, description_template, priority, status } = req.body;
   try {
-    const [template] = await db('task_templates')
+    const { data: template, error } = await supabase
+      .from('task_templates')
       .insert({
         name,
         title_template,
@@ -684,7 +742,14 @@ router.post('/templates', isAuthenticated, async (req, res) => {
         created_by: req.user.id,
         is_default: false
       })
-      .returning('*');
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error('Create template error:', error);
+      return res.status(500).json({ error: 'Failed to create template' });
+    }
+
     res.status(201).json(template);
   } catch (err) {
     console.error('Create template error:', err);
@@ -695,11 +760,30 @@ router.post('/templates', isAuthenticated, async (req, res) => {
 // Delete a custom task template
 router.delete('/templates/:id', isAuthenticated, async (req, res) => {
   try {
-    const template = await db('task_templates').where({ id: req.params.id }).first();
-    if (!template) return res.status(404).json({ error: 'Template not found' });
-    if (template.created_by !== req.user.id) return res.status(403).json({ error: 'Can only delete your own templates' });
+    const { data: template, error: fetchError } = await supabase
+      .from('task_templates')
+      .select('*')
+      .eq('id', parseInt(req.params.id))
+      .single();
 
-    await db('task_templates').where({ id: req.params.id }).del();
+    if (fetchError || !template) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    if (template.created_by !== req.user.id) {
+      return res.status(403).json({ error: 'Can only delete your own templates' });
+    }
+
+    const { error: deleteError } = await supabase
+      .from('task_templates')
+      .delete()
+      .eq('id', parseInt(req.params.id));
+
+    if (deleteError) {
+      console.error('Delete template error:', deleteError);
+      return res.status(500).json({ error: 'Failed to delete template' });
+    }
+
     res.json({ message: 'Template deleted' });
   } catch (err) {
     console.error('Delete template error:', err);
@@ -714,33 +798,50 @@ router.post('/:id/time/start', isAuthenticated, canAccessTask, async (req, res) 
     const { description } = req.body;
 
     // Check if user already has an active timer for this task
-    const activeTimer = await db('time_logs')
-      .where({ task_id: id, user_id: req.user.id, is_active: true })
-      .first();
+    const { data: activeTimer, error: activeError } = await supabase
+      .from('time_logs')
+      .select('*')
+      .eq('task_id', parseInt(id))
+      .eq('user_id', req.user.id)
+      .eq('is_active', true)
+      .single();
 
-    if (activeTimer) {
+    if (activeTimer && !activeError) {
       return res.status(400).json({ error: 'Timer already running for this task' });
     }
 
     // Stop any other active timers for this user
-    await db('time_logs')
-      .where({ user_id: req.user.id, is_active: true })
+    const { error: stopError } = await supabase
+      .from('time_logs')
       .update({
         is_active: false,
-        end_time: db.fn.now(),
-        duration_minutes: db.raw('EXTRACT(EPOCH FROM (NOW() - start_time)) / 60')
-      });
+        end_time: new Date().toISOString(),
+        duration_minutes: 0 // Will be calculated when stopped
+      })
+      .eq('user_id', req.user.id)
+      .eq('is_active', true);
+
+    if (stopError) {
+      console.error('Stop other timers error:', stopError);
+    }
 
     // Start new timer
-    const [timeLog] = await db('time_logs')
+    const { data: timeLog, error: insertError } = await supabase
+      .from('time_logs')
       .insert({
-        task_id: id,
+        task_id: parseInt(id),
         user_id: req.user.id,
-        start_time: db.fn.now(),
+        start_time: new Date().toISOString(),
         description: description || null,
         is_active: true
       })
-      .returning('*');
+      .select('*')
+      .single();
+
+    if (insertError) {
+      console.error('Start timer error:', insertError);
+      return res.status(500).json({ error: 'Failed to start timer' });
+    }
 
     res.status(201).json(timeLog);
   } catch (err) {
@@ -754,22 +855,38 @@ router.post('/:id/time/stop', isAuthenticated, canAccessTask, async (req, res) =
   try {
     const { id } = req.params;
 
-    const activeTimer = await db('time_logs')
-      .where({ task_id: id, user_id: req.user.id, is_active: true })
-      .first();
+    const { data: activeTimer, error: fetchError } = await supabase
+      .from('time_logs')
+      .select('*')
+      .eq('task_id', parseInt(id))
+      .eq('user_id', req.user.id)
+      .eq('is_active', true)
+      .single();
 
-    if (!activeTimer) {
+    if (fetchError || !activeTimer) {
       return res.status(400).json({ error: 'No active timer found for this task' });
     }
 
-    const [updatedLog] = await db('time_logs')
-      .where({ id: activeTimer.id })
+    // Calculate duration
+    const startTime = new Date(activeTimer.start_time);
+    const endTime = new Date();
+    const durationMinutes = Math.floor((endTime - startTime) / (1000 * 60));
+
+    const { data: updatedLog, error: updateError } = await supabase
+      .from('time_logs')
       .update({
-        end_time: db.fn.now(),
+        end_time: endTime.toISOString(),
         is_active: false,
-        duration_minutes: db.raw('EXTRACT(EPOCH FROM (NOW() - start_time)) / 60')
+        duration_minutes: durationMinutes
       })
-      .returning('*');
+      .eq('id', activeTimer.id)
+      .select('*')
+      .single();
+
+    if (updateError) {
+      console.error('Stop timer error:', updateError);
+      return res.status(500).json({ error: 'Failed to stop timer' });
+    }
 
     res.json(updatedLog);
   } catch (err) {
@@ -782,19 +899,36 @@ router.post('/:id/time/stop', isAuthenticated, canAccessTask, async (req, res) =
 router.get('/:id/time', isAuthenticated, canAccessTask, async (req, res) => {
   try {
     const { id } = req.params;
-    const timeLogs = await db('time_logs')
-      .where({ task_id: id })
-      .join('users', 'time_logs.user_id', 'users.id')
-      .select('time_logs.*', 'users.username')
-      .orderBy('time_logs.start_time', 'desc');
+
+    const { data: timeLogs, error } = await supabase
+      .from('time_logs')
+      .select(`
+        *,
+        users!time_logs_user_id_fkey (
+          username
+        )
+      `)
+      .eq('task_id', parseInt(id))
+      .order('start_time', { ascending: false });
+
+    if (error) {
+      console.error('Get time logs error:', error);
+      return res.status(500).json({ error: 'Failed to get time logs' });
+    }
 
     // Calculate total time spent
     const totalMinutes = timeLogs.reduce((sum, log) => {
       return sum + (log.duration_minutes || 0);
     }, 0);
 
+    // Format the response to match the expected structure
+    const formattedLogs = timeLogs.map(log => ({
+      ...log,
+      username: log.users?.username
+    }));
+
     res.json({
-      logs: timeLogs,
+      logs: formattedLogs,
       totalMinutes: Math.round(totalMinutes),
       totalHours: Math.round(totalMinutes / 60 * 100) / 100
     });
@@ -831,9 +965,14 @@ router.get('/time/active', isAuthenticated, async (req, res) => {
 router.delete('/time/:logId', isAuthenticated, async (req, res) => {
   try {
     const { logId } = req.params;
-    const timeLog = await db('time_logs').where({ id: logId }).first();
 
-    if (!timeLog) {
+    const { data: timeLog, error: fetchError } = await supabase
+      .from('time_logs')
+      .select('*')
+      .eq('id', parseInt(logId))
+      .single();
+
+    if (fetchError || !timeLog) {
       return res.status(404).json({ error: 'Time log not found' });
     }
 
@@ -841,7 +980,16 @@ router.delete('/time/:logId', isAuthenticated, async (req, res) => {
       return res.status(403).json({ error: 'You can only delete your own time logs' });
     }
 
-    await db('time_logs').where({ id: logId }).del();
+    const { error: deleteError } = await supabase
+      .from('time_logs')
+      .delete()
+      .eq('id', parseInt(logId));
+
+    if (deleteError) {
+      console.error('Delete time log error:', deleteError);
+      return res.status(500).json({ error: 'Failed to delete time log' });
+    }
+
     res.json({ message: 'Time log deleted' });
   } catch (err) {
     console.error('Delete time log error:', err);
