@@ -48,6 +48,26 @@ app.use(session({ secret: process.env.SESSION_SECRET || 'your-secret-key', resav
 app.use(passport.initialize());
 app.use(passport.session());
 
+// Handle preflight OPTIONS requests
+app.options('*', (req, res) => {
+  const allowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost:3002',
+    'https://frontend-alpha-seven-16.vercel.app'
+  ];
+
+  const origin = req.headers.origin;
+
+  if (allowedOrigins.includes(origin) || !origin) {
+    res.header('Access-Control-Allow-Origin', origin || allowedOrigins[2]);
+  }
+
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+  res.sendStatus(200);
+});
+
 // Log CORS requests for debugging
 app.use((req, res, next) => {
   console.debug(`CORS request: ${req.method} ${req.originalUrl} from ${req.get('Origin')}`);
