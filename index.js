@@ -4,7 +4,7 @@ const app = express();
 // Basic middleware
 app.use(express.json());
 
-// CORS - allow all for testing
+// CORS - allow all for now, will restrict later
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -40,14 +40,81 @@ app.get('/test', (req, res) => {
   });
 });
 
+// Mock auth for testing
 app.post('/auth/login', (req, res) => {
   console.log('Login attempt:', req.body);
+
+  // Simple mock authentication
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({
+      error: 'Email and password are required'
+    });
+  }
+
+  // Mock successful login
   res.json({
     success: true,
-    message: 'Login endpoint reached',
-    data: req.body,
+    message: 'Login successful',
+    user: {
+      id: 1,
+      username: 'testuser',
+      email: email
+    },
+    token: 'mock-jwt-token-' + Date.now(),
     timestamp: new Date().toISOString()
   });
+});
+
+app.post('/auth/register', (req, res) => {
+  console.log('Register attempt:', req.body);
+
+  const { username, email, password } = req.body;
+
+  if (!username || !email || !password) {
+    return res.status(400).json({
+      error: 'Username, email, and password are required'
+    });
+  }
+
+  // Mock successful registration
+  res.status(201).json({
+    success: true,
+    message: 'Registration successful',
+    user: {
+      id: 1,
+      username: username,
+      email: email
+    },
+    token: 'mock-jwt-token-' + Date.now(),
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Mock API endpoints
+app.get('/teams', (req, res) => {
+  res.json([
+    {
+      id: 1,
+      name: 'Test Team',
+      created_by: 1,
+      created_at: new Date().toISOString()
+    }
+  ]);
+});
+
+app.get('/tasks/get-task', (req, res) => {
+  res.json([
+    {
+      id: 1,
+      title: 'Test Task',
+      description: 'This is a test task',
+      team_id: 1,
+      status: 'To Do',
+      created_at: new Date().toISOString()
+    }
+  ]);
 });
 
 // Export for Vercel
