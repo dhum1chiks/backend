@@ -104,12 +104,84 @@ app.post('/auth/register', (req, res) => {
   });
 });
 
+app.post('/teams', (req, res) => {
+  const { name } = req.body;
+
+  if (!name) {
+    return res.status(400).json({ error: 'Team name is required' });
+  }
+
+  const newTeam = {
+    id: Date.now(),
+    name,
+    created_by: 1, // Mock current user
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+
+  res.status(201).json(newTeam);
+});
+
+app.delete('/teams/:id', (req, res) => {
+  const { id } = req.params;
+  // Mock: only allow creator to delete
+  res.json({ message: 'Team deleted successfully' });
+});
+
+app.post('/teams/:id/members', (req, res) => {
+  const { id } = req.params;
+  const { user_id } = req.body;
+
+  if (!user_id) {
+    return res.status(400).json({ error: 'User ID is required' });
+  }
+
+  const newMember = {
+    team_id: parseInt(id),
+    user_id: parseInt(user_id),
+    created_at: new Date().toISOString()
+  };
+
+  res.status(201).json(newMember);
+});
+
+app.delete('/teams/:teamId/members/:userId', (req, res) => {
+  const { teamId, userId } = req.params;
+  res.json({ message: 'Member removed successfully' });
+});
+
+app.post('/teams/:id/invite', (req, res) => {
+  const { id } = req.params;
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required' });
+  }
+
+  const invitation = {
+    id: Date.now(),
+    team_id: parseInt(id),
+    inviter_id: 1,
+    invitee_email: email,
+    status: 'pending',
+    created_at: new Date().toISOString()
+  };
+
+  res.status(201).json(invitation);
+});
+
 // Mock API endpoints
 app.get('/teams', (req, res) => {
   res.json([
     {
       id: 1,
-      name: 'Test Team',
+      name: 'Development Team',
+      created_by: 1,
+      created_at: new Date().toISOString()
+    },
+    {
+      id: 2,
+      name: 'Design Team',
       created_by: 1,
       created_at: new Date().toISOString()
     }
@@ -129,8 +201,54 @@ app.get('/teams/:id/members', (req, res) => {
   ]);
 });
 
+app.post('/tasks/create-task', (req, res) => {
+  const { title, description, team_id, assigned_to_id, due_date, priority, milestone_id } = req.body;
+
+  if (!title || !team_id) {
+    return res.status(400).json({ error: 'Title and team_id are required' });
+  }
+
+  const newTask = {
+    id: Date.now(),
+    title,
+    description: description || '',
+    team_id: parseInt(team_id),
+    assigned_to_id: assigned_to_id ? parseInt(assigned_to_id) : null,
+    assigned_by_id: 1, // Mock current user
+    created_by: 1,
+    due_date,
+    status: 'To Do',
+    priority: priority || 'Medium',
+    milestone_id: milestone_id ? parseInt(milestone_id) : null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+
+  res.status(201).json(newTask);
+});
+
+app.put('/tasks/:id', (req, res) => {
+  const { id } = req.params;
+  const updates = req.body;
+
+  const updatedTask = {
+    id: parseInt(id),
+    ...updates,
+    updated_at: new Date().toISOString()
+  };
+
+  res.json(updatedTask);
+});
+
+app.delete('/tasks/:id', (req, res) => {
+  const { id } = req.params;
+  res.json({ message: 'Task deleted successfully' });
+});
+
 app.get('/tasks/get-task', (req, res) => {
-  res.json([
+  const { team_id, assigned_to_id, status, priority } = req.query;
+
+  let tasks = [
     {
       id: 1,
       title: 'Test Task',
@@ -140,8 +258,44 @@ app.get('/tasks/get-task', (req, res) => {
       status: 'To Do',
       priority: 'Medium',
       created_at: new Date().toISOString()
+    },
+    {
+      id: 2,
+      title: 'Implement Login',
+      description: 'User authentication feature',
+      team_id: 1,
+      assigned_to_id: 1,
+      status: 'In Progress',
+      priority: 'High',
+      created_at: new Date().toISOString()
+    },
+    {
+      id: 3,
+      title: 'Design Dashboard',
+      description: 'Create responsive dashboard UI',
+      team_id: 1,
+      assigned_to_id: null,
+      status: 'Done',
+      priority: 'Medium',
+      created_at: new Date().toISOString()
     }
-  ]);
+  ];
+
+  // Apply filters
+  if (team_id) {
+    tasks = tasks.filter(task => task.team_id === parseInt(team_id));
+  }
+  if (assigned_to_id) {
+    tasks = tasks.filter(task => task.assigned_to_id === parseInt(assigned_to_id));
+  }
+  if (status) {
+    tasks = tasks.filter(task => task.status === status);
+  }
+  if (priority) {
+    tasks = tasks.filter(task => task.priority === priority);
+  }
+
+  res.json(tasks);
 });
 
 app.get('/tasks/time/active', (req, res) => {
@@ -149,12 +303,101 @@ app.get('/tasks/time/active', (req, res) => {
   res.json(null);
 });
 
+app.post('/tasks/:id/attachments', (req, res) => {
+  const { id } = req.params;
+
+  // Mock file upload - in real implementation, this would handle multipart/form-data
+  const mockFile = {
+    id: Date.now(),
+    task_id: parseInt(id),
+    filename: 'document.pdf',
+    original_name: 'Project_Document.pdf',
+    path: `/uploads/tasks/${id}/document.pdf`,
+    mimetype: 'application/pdf',
+    size: 245760, // 240KB
+    uploaded_by: 1,
+    created_at: new Date().toISOString()
+  };
+
+  res.status(201).json(mockFile);
+});
+
 app.get('/tasks/:id/attachments', (req, res) => {
-  res.json([]);
+  const { id } = req.params;
+
+  res.json([
+    {
+      id: 1,
+      task_id: parseInt(id),
+      filename: 'requirements.pdf',
+      original_name: 'Project_Requirements.pdf',
+      path: `/uploads/tasks/${id}/requirements.pdf`,
+      mimetype: 'application/pdf',
+      size: 512000, // 500KB
+      uploaded_by: 1,
+      username: 'testuser',
+      created_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() // 1 day ago
+    },
+    {
+      id: 2,
+      task_id: parseInt(id),
+      filename: 'mockup.png',
+      original_name: 'UI_Mockup.png',
+      path: `/uploads/tasks/${id}/mockup.png`,
+      mimetype: 'image/png',
+      size: 1024000, // 1MB
+      uploaded_by: 1,
+      username: 'testuser',
+      created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() // 2 hours ago
+    }
+  ]);
+});
+
+app.delete('/attachments/:id', (req, res) => {
+  const { id } = req.params;
+  res.json({ message: 'Attachment deleted successfully' });
+});
+
+app.post('/tasks/:id/comments', (req, res) => {
+  const { id } = req.params;
+  const { content } = req.body;
+
+  if (!content) {
+    return res.status(400).json({ error: 'Comment content is required' });
+  }
+
+  const newComment = {
+    id: Date.now(),
+    task_id: parseInt(id),
+    user_id: 1,
+    content,
+    created_at: new Date().toISOString()
+  };
+
+  res.status(201).json(newComment);
 });
 
 app.get('/tasks/:id/comments', (req, res) => {
-  res.json([]);
+  const { id } = req.params;
+
+  res.json([
+    {
+      id: 1,
+      task_id: parseInt(id),
+      user_id: 1,
+      username: 'testuser',
+      content: 'This task looks good to start working on.',
+      created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() // 2 hours ago
+    },
+    {
+      id: 2,
+      task_id: parseInt(id),
+      user_id: 1,
+      username: 'testuser',
+      content: 'I\'ve completed the initial implementation. Please review.',
+      created_at: new Date(Date.now() - 30 * 60 * 1000).toISOString() // 30 minutes ago
+    }
+  ]);
 });
 
 app.get('/tasks/:id/time', (req, res) => {
@@ -208,14 +451,70 @@ app.get('/users', (req, res) => {
   ]);
 });
 
+app.put('/users/profile', (req, res) => {
+  const updates = req.body;
+
+  const updatedProfile = {
+    id: 1,
+    username: updates.username || 'testuser',
+    email: updates.email || 'test@example.com',
+    bio: updates.bio || 'Test user',
+    phone: updates.phone,
+    timezone: updates.timezone || 'UTC',
+    notification_settings: updates.notification_settings || { email: true, push: true, reminders: true },
+    theme_settings: updates.theme_settings || { theme: 'light', color: 'green' },
+    avatar_url: updates.avatar_url,
+    updated_at: new Date().toISOString()
+  };
+
+  res.json(updatedProfile);
+});
+
 app.get('/users/profile', (req, res) => {
   res.json({
     id: 1,
     username: 'testuser',
     email: 'test@example.com',
-    bio: 'Test user',
-    avatar_url: null
+    bio: 'Experienced full-stack developer passionate about creating efficient and user-friendly applications.',
+    phone: '+1-555-0123',
+    timezone: 'America/New_York',
+    avatar_url: null,
+    notification_settings: { email: true, push: true, reminders: true },
+    theme_settings: { theme: 'light', color: 'green' },
+    created_at: new Date().toISOString()
   });
+});
+
+app.get('/task-templates', (req, res) => {
+  res.json([
+    {
+      id: 1,
+      name: 'Bug Report',
+      title_template: '🐛 Bug: [Brief description]',
+      description_template: '## Description\n[Describe the bug]\n\n## Steps to Reproduce\n1. [Step 1]\n2. [Step 2]\n3. [Step 3]\n\n## Expected Behavior\n[What should happen]\n\n## Actual Behavior\n[What actually happens]\n\n## Environment\n- Browser: [Browser name]\n- OS: [Operating system]',
+      priority: 'High',
+      status: 'To Do',
+      is_default: true
+    },
+    {
+      id: 2,
+      name: 'Feature Request',
+      title_template: '✨ Feature: [Feature name]',
+      description_template: '## Summary\n[Brief summary of the feature]\n\n## Problem\n[What problem does this solve?]\n\n## Solution\n[Describe the proposed solution]\n\n## Alternatives\n[Alternative solutions considered]\n\n## Additional Context\n[Any additional information]',
+      priority: 'Medium',
+      status: 'To Do',
+      is_default: true
+    },
+    {
+      id: 3,
+      name: 'Meeting',
+      title_template: '📅 Meeting: [Meeting topic]',
+      description_template: '## Meeting Details\n- **Date & Time:** [Date and time]\n- **Location:** [Physical or virtual location]\n- **Attendees:** [List of attendees]\n\n## Agenda\n1. [Topic 1]\n2. [Topic 2]\n3. [Topic 3]\n\n## Notes\n[Meeting notes will be added here]',
+      priority: 'Medium',
+      status: 'To Do',
+      is_default: true
+    }
+  ]);
 });
 
 app.get('/teams/invitations', (req, res) => {
@@ -236,8 +535,75 @@ app.post('/teams/:id/messages', (req, res) => {
   });
 });
 
+app.post('/milestones', (req, res) => {
+  const { title, description, team_id, due_date, priority } = req.body;
+
+  if (!title || !team_id) {
+    return res.status(400).json({ error: 'Title and team_id are required' });
+  }
+
+  const newMilestone = {
+    id: Date.now(),
+    title,
+    description: description || '',
+    team_id: parseInt(team_id),
+    created_by: 1,
+    due_date,
+    status: 'Not Started',
+    priority: priority || 'Medium',
+    progress_percentage: 0,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+
+  res.status(201).json(newMilestone);
+});
+
+app.put('/milestones/:id', (req, res) => {
+  const { id } = req.params;
+  const updates = req.body;
+
+  const updatedMilestone = {
+    id: parseInt(id),
+    ...updates,
+    updated_at: new Date().toISOString()
+  };
+
+  res.json(updatedMilestone);
+});
+
+app.delete('/milestones/:id', (req, res) => {
+  const { id } = req.params;
+  res.json({ message: 'Milestone deleted successfully' });
+});
+
 app.get('/milestones', (req, res) => {
-  res.json([]);
+  res.json([
+    {
+      id: 1,
+      title: 'Q4 Product Launch',
+      description: 'Launch the new product features',
+      team_id: 1,
+      created_by: 1,
+      due_date: '2025-12-31',
+      status: 'In Progress',
+      priority: 'High',
+      progress_percentage: 65,
+      created_at: new Date().toISOString()
+    },
+    {
+      id: 2,
+      title: 'Security Audit',
+      description: 'Complete security review and fixes',
+      team_id: 1,
+      created_by: 1,
+      due_date: '2025-11-15',
+      status: 'Not Started',
+      priority: 'High',
+      progress_percentage: 0,
+      created_at: new Date().toISOString()
+    }
+  ]);
 });
 
 app.get('/tasks/reminders', (req, res) => {
