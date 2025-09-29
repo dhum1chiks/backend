@@ -1,133 +1,52 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const cookieParser = require('cookie-parser');
-const session = require('express-session');
-const passport = require('passport');
-const rateLimit = require('express-rate-limit');
-const Pusher = require('pusher');
 
-// Import routes
-const authRoutes = require('./routes/auth');
-const taskRoutes = require('./routes/tasks');
-const teamRoutes = require('./routes/teams');
-const userRoutes = require('./routes/users');
-const milestoneRoutes = require('./routes/milestones');
-const { isAuthenticated } = require('./middleware/isAuthenticated');
-
+// Create minimal app for testing
 const app = express();
-
-// Initialize Pusher
-const pusher = new Pusher({
-  appId: "2057066",
-  key: "c30f759d527210673c85",
-  secret: "f95d0c1d0a0e86564c7e",
-  cluster: "ap1",
-  useTLS: true
-});
 
 // Middleware
 app.use(express.json());
 
-// CORS configuration - simplified for Vercel
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      // Allow requests with no origin (mobile apps, curl, etc.)
-      if (!origin) return callback(null, true);
-
-      const allowedOrigins = [
-        'http://localhost:3000',
-        'http://localhost:3002',
-        'https://frontend-alpha-seven-16.vercel.app',
-      ];
-
-      if (allowedOrigins.indexOf(origin) !== -1) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-  })
-);
-app.use(cookieParser());
-app.use(session({ secret: process.env.SESSION_SECRET || 'your-secret-key', resave: false, saveUninitialized: false }));
-app.use(passport.initialize());
-app.use(passport.session());
-
-// Log CORS requests for debugging
-app.use((req, res, next) => {
-  console.debug(`CORS request: ${req.method} ${req.originalUrl} from ${req.get('Origin')}`);
-  next();
-});
-
-// Rate-limited auth routes with logging
-const authRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10,
-  handler: (req, res) => {
-    console.warn(`Rate limit exceeded for ${req.method} ${req.originalUrl} from ${req.ip}`);
-    res.status(429).json({ error: 'Too many requests, please try again later' });
-  },
-});
-app.use('/auth', authRateLimiter, authRoutes);
-
-// Mount other routes
-app.use('/tasks', taskRoutes);
-app.use('/teams', teamRoutes);
-app.use('/users', userRoutes);
-app.use('/milestones', milestoneRoutes);
+// CORS configuration - allow all for testing
+app.use(cors({
+  origin: true, // Allow all origins for testing
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+}));
 
 // Simple test routes
-app.get('/hello', (req, res) => res.send('Hello from Supabase-powered backend!'));
+app.get('/hello', (req, res) => {
+  res.send('Hello from backend!');
+});
 
-// Test CORS route
 app.get('/test-cors', (req, res) => {
   res.json({
     message: 'CORS test successful',
     origin: req.get('Origin'),
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    status: 'working'
   });
 });
 
-// Health check route
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    message: 'Backend is running successfully'
   });
 });
 
-// Example of a protected route
-app.get('/protected', isAuthenticated, (req, res) => {
-  res.json({ message: `Hello, user ${req.user.email}` });
+// Test auth endpoint
+app.post('/auth/login', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Login endpoint is working',
+    data: req.body
+  });
 });
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error(`Server error on ${req.method} ${req.originalUrl}:`, err);
-  if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
-    return res.status(401).json({ error: 'Invalid or expired token' });
-  }
-  res.status(500).json({ error: 'Internal server error' });
-});
-
-// Pusher helper functions for real-time events
-const triggerPusherEvent = (channel, event, data) => {
-  try {
-    pusher.trigger(channel, event, data);
-    console.log(`Pusher event triggered: ${channel} -> ${event}`);
-  } catch (error) {
-    console.error('Pusher trigger error:', error);
-  }
-};
-
-// Export pusher for use in routes
-module.exports.pusher = pusher;
 
 // Export for Vercel serverless functions
 module.exports = app;
