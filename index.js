@@ -161,6 +161,47 @@ app.get('/tasks/:id/time', (req, res) => {
   res.json({ logs: [], totalMinutes: 0, totalHours: 0 });
 });
 
+app.post('/tasks/:id/time/start', (req, res) => {
+  const { id } = req.params;
+  const { description } = req.body;
+
+  const mockTimer = {
+    id: Date.now(),
+    task_id: parseInt(id),
+    user_id: 1,
+    start_time: new Date().toISOString(),
+    description: description || null,
+    is_active: true,
+    created_at: new Date().toISOString()
+  };
+
+  res.json(mockTimer);
+});
+
+app.post('/tasks/:id/time/stop', (req, res) => {
+  const { id } = req.params;
+
+  const mockStoppedTimer = {
+    id: Date.now(),
+    task_id: parseInt(id),
+    user_id: 1,
+    start_time: new Date(Date.now() - 30 * 60 * 1000).toISOString(), // 30 minutes ago
+    end_time: new Date().toISOString(),
+    duration_minutes: 30,
+    description: 'Mock timer session',
+    is_active: false,
+    created_at: new Date().toISOString()
+  };
+
+  res.json(mockStoppedTimer);
+});
+
+app.delete('/tasks/time/:logId', (req, res) => {
+  const { logId } = req.params;
+  // Mock successful deletion
+  res.json({ message: 'Time log deleted successfully' });
+});
+
 app.get('/users', (req, res) => {
   res.json([
     { id: 1, username: 'testuser', email: 'test@example.com' }
